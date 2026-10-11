@@ -4,7 +4,7 @@
  * The firmware's copy of this file (TitanLRS/src/html/src/utils/transport.js) defaults to HTTP
  * against the device's own web server. In the flasher there is no such server: the transport is
  * always injected by initDashboard() from src/dashboard/index.js, normally a UsbConfigSession
- * from src/js/usbconfig.js (or a MockTransport in dev).
+ * from src/js/usbconfig.js (or the demo device's MockTransport from src/js/demodevice.js).
  *
  * The exported surface is identical to the firmware copy, so the panels are byte-compatible.
  * NOTHING in src/dashboard/ may reach the network directly — see PORTING.md for the guard grep.

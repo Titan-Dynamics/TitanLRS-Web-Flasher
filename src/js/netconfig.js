@@ -12,7 +12,7 @@
  * parameter tunnel is POST + long-poll.
  *
  * An HttpConfigSession implements the same interface as the firmware web UI's
- * html/src/utils/transport.js (and the MockTransport in usbconfig.js), so the panels in
+ * html/src/utils/transport.js (and the MockTransport in demodevice.js), so the panels in
  * src/dashboard/ work unchanged.
  */
 

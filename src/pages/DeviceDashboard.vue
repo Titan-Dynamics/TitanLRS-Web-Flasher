@@ -8,7 +8,8 @@ import radioIcon from '../assets/brand/radio-icon.png'
 // The Configurator page. On opening it looks for a TitanLRS device on its USB network interface
 // (netconfig.js) by itself, behind a spinner; if exactly one answers the dashboard takes the
 // session. Otherwise it falls back to the connect panel, whose Connect to Device button runs the
-// same search. On a first visit the search raises Chrome's Local Network Access prompt.
+// same search. On a first visit the search raises Chrome's Local Network Access prompt. The panel
+// also offers a demo device (MockTransport) for trying the configurator without hardware.
 // probing -> idle (connect panel) | connecting -> connected -> lost
 const phase = ref('probing')
 const errorText = ref('')
@@ -27,8 +28,11 @@ const dashboard = shallowRef(null)   // the lazily-imported src/dashboard/index.
 // Which device we were talking to, so a reconnect goes back to the same one.
 const retainedAddress = ref(null)
 
-const mockParam = new URLSearchParams(window.location.search).get('mock')
-
+// The demo device: 'tx' | 'rx' while one is open, from the connect panel or ?dashboard&mock=tx|rx.
+const demo = ref(new URLSearchParams(window.location.search).get('mock'))
+// Kept across the demo's simulated reboots, so changes made in the demo survive them.
+let demoSession = null
+let unsubscribeLost = null
 
 async function loadDashboardModule() {
   if (!dashboard.value) {
@@ -45,7 +49,9 @@ async function adopt(s) {
   hello.value = s.hello
   retainedAddress.value = s.address || null
 
-  s.onLost((reason) => {
+  // A reconnect can hand back the same session (the demo), so drop the previous registration.
+  if (unsubscribeLost) unsubscribeLost()
+  unsubscribeLost = s.onLost((reason) => {
     // A reboot/reset drops the port too; the dashboard announces those in advance so we can
     // say "reconnect once it comes back" instead of reporting a failure.
     errorText.value = rebooting.value ? '' : reason
@@ -61,9 +67,12 @@ async function adopt(s) {
 }
 
 async function newSession() {
-  if (mockParam) {
-    const {MockTransport} = await import('../js/usbconfig.js')
-    return new MockTransport(mockParam)
+  if (demo.value) {
+    if (!demoSession) {
+      const {MockTransport} = await import('../js/demodevice.js')
+      demoSession = new MockTransport(demo.value)
+    }
+    return demoSession
   }
   const {HttpConfigSession} = await import('../js/netconfig.js')
   return new HttpConfigSession()
@@ -85,7 +94,7 @@ async function connectDevice(address = null) {
   connectError.value = ''
   connectBusy.value = true
   try {
-    if (!address && !mockParam) {
+    if (!address && !demo.value) {
       const {discoverDevices, unreachableHelp} = await import('../js/netconfig.js')
       const found = await discoverDevices()
       if (found.length === 0) {
@@ -117,7 +126,7 @@ async function connectDevice(address = null) {
  * out while it is still open. If the user then allows it, search again from the panel.
  */
 async function autoConnect() {
-  if (mockParam) {
+  if (demo.value) {
     await connectDevice()
     return
   }
@@ -168,8 +177,26 @@ function rescan() {
   connectDevice()
 }
 
+/** The connect panel's demo buttons: open a simulated transmitter or receiver. */
+function startDemo(type) {
+  demo.value = type
+  demoSession = null
+  choices.value = []
+  connectDevice()
+}
+
 /** Drop the device and the panels, and show the connect panel again. */
 function resetToIdle() {
+  if (demo.value) {
+    demo.value = null
+    demoSession = null
+    // So a reload does not land back in the demo.
+    const url = new URL(window.location.href)
+    if (url.searchParams.has('mock')) {
+      url.searchParams.delete('mock')
+      window.history.replaceState(window.history.state, '', url)
+    }
+  }
   session.value = null
   retainedAddress.value = null
   hello.value = null
@@ -255,7 +282,7 @@ const REBOOT_SETTLE_MS = 2000
 // Over the network there is no chooser needing a click, so a device that announced a reboot is
 // picked up again on its own once it is back.
 watch(phase, async (p) => {
-  if (p === 'lost' && rebooting.value && retainedAddress.value) {
+  if (p === 'lost' && rebooting.value && (retainedAddress.value || demo.value)) {
     // The device answers the reboot request before it goes down: give it time to actually leave,
     // or the first attempt reconnects to it just before it reboots.
     await new Promise((r) => setTimeout(r, REBOOT_SETTLE_MS))
@@ -267,7 +294,7 @@ let unmounted = false
 
 onMounted(async () => {
   window.addEventListener('td-device-rebooting', onRebootAnnounced)
-  // ?dashboard&mock=tx|rx (dev): the fixture transport needs no device.
+  // ?dashboard&mock=tx|rx: straight into the demo device.
   await autoConnect()
 })
 
@@ -314,19 +341,27 @@ onBeforeUnmount(() => {
               <VBtn variant="text" size="small" :disabled="connectBusy" @click="rescan">Search again</VBtn>
             </div>
           </template>
-          <HoverCard v-else min-height="100%" :interactive="false"
-                     :image="moduleIcon" :hover-image="moduleIcon"
-                     title="USB Device Config"
-                     text="Connect a TitanLRS device over USB
-                     and click &quot;Connect to Device&quot; to edit the settings straight from the browser.
-                     Chrome will ask to allow access to devices on your local network: the device
-                     appears to your computer as a USB network adapter.">
-            <template #action>
-              <VBtn color="primary" size="large" :loading="connectBusy" @click="connectDevice()">
-                Connect to Device
-              </VBtn>
-            </template>
-          </HoverCard>
+          <template v-else>
+            <HoverCard min-height="100%" :interactive="false"
+                       :image="moduleIcon" :hover-image="moduleIcon"
+                       title="USB Device Config"
+                       text="Connect a TitanLRS device over USB
+                       and click &quot;Connect to Device&quot; to edit the settings.">
+              <template #action>
+                <VBtn color="primary" size="large" :loading="connectBusy" @click="connectDevice()">
+                  Connect to Device
+                </VBtn>
+              </template>
+            </HoverCard>
+            <!-- No hardware to hand: the configurator against a simulated device. -->
+            <div class="td-dash-demo">
+              <span>Want to try a demo device?</span>
+              <div class="td-dash-demo-buttons">
+                <VBtn variant="outlined" :disabled="connectBusy" @click="startDemo('tx')">Try a demo transmitter</VBtn>
+                <VBtn variant="outlined" :disabled="connectBusy" @click="startDemo('rx')">Try a demo receiver</VBtn>
+              </div>
+            </div>
+          </template>
         </div>
       </VContainer>
     </div>
@@ -359,6 +394,11 @@ onBeforeUnmount(() => {
           <span>{{ statusText }}</span>
           <button class="td-btn td-btn-primary" :disabled="phase === 'connecting'" @click="reconnect">Reconnect</button>
         </div>
+        <!-- The demo device: say so, and the way out. -->
+        <div v-else-if="demo" class="td-dash-status-bar">
+          <span>Demo {{ demo === 'rx' ? 'receiver' : 'transmitter' }}: a simulated device, no hardware connected.</span>
+          <button class="td-btn td-btn-ghost" @click="resetToIdle">Exit demo</button>
+        </div>
         <!-- The ported Lit panels render here, exactly as #main does on-device. -->
         <div id="main" ref="panelHost"></div>
       </div>
@@ -373,9 +413,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Shown only between mounting with a live session and the first panel render. */
+/* The automatic search, then the gap before the first panel. Fills the shell's column below the
+   site header (App.vue's .td-shell), so the spinner sits in the middle of the visible page. */
 .td-dash-loading {
-  min-height: 60vh;
+  flex: 1 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -402,6 +443,23 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 8px;
+}
+
+/* Under the connect card: the demo device buttons. */
+.td-dash-demo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 32px;
+  color: var(--td-fg-mute);
+}
+
+.td-dash-demo-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
 }
 
 /* ── Connected shell ────────────────────────────────────────────────────────
@@ -431,7 +489,7 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-/* Shown only while the device is unreachable (lost, rebooting, reconnecting). */
+/* Shown while the device is unreachable (lost, rebooting, reconnecting), or for the demo device. */
 .td-dashboard .td-dash-status-bar {
   display: flex;
   align-items: center;
