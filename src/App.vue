@@ -74,7 +74,7 @@ else if (store.targetType)
 store.options.flashMethod = urlParams.get('method');
 
 // Deep link into the configurator: ?dashboard opens its connect panel, and ?dashboard&mock=tx|rx
-// (dev) connects it to the built-in mock device straight away.
+// opens its demo device straight away.
 if (DEVICE_CONFIG_ENABLED && urlParams.has('dashboard')) store.view = 'dashboard';
 
 </script>

@@ -5,7 +5,7 @@
  * (TitanLRS/src/html/src) — see PORTING.md for the source commit and the sync procedure.
  * This module is the only place the copies are wired to the outside world:
  *
- *   - installs the transport (a UsbConfigSession, or MockTransport in dev),
+ *   - installs the transport (a UsbConfigSession, or the MockTransport from demodevice.js),
  *   - resolves the runtime FEATURES that replace the firmware build's compile-time blocks,
  *   - loads the config document into the shared elrsState.
  *

@@ -2,15 +2,20 @@
 import {computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch} from 'vue'
 import HoverCard from '../components/HoverCard.vue'
 import moduleIcon from '../assets/brand/module-icon.png'
+import controllerIcon from '../assets/brand/controller-icon.png'
+import radioIcon from '../assets/brand/radio-icon.png'
 
-// The Configurator page. It opens on a connect panel; its Connect to Device button raises the
-// WebUSB chooser (which needs that click's user activation) and the dashboard takes the session.
-// idle -> connecting -> connected -> lost
-const phase = ref('idle')
+// The Configurator page. On opening it looks for a TitanLRS device on its USB network interface
+// (netconfig.js) by itself, behind a spinner; if exactly one answers the dashboard takes the
+// session. Otherwise it falls back to the connect panel, whose Connect to Device button runs the
+// same search. On a first visit the search raises Chrome's Local Network Access prompt. The panel
+// also offers a demo device (MockTransport) for trying the configurator without hardware.
+// probing -> idle (connect panel) | connecting -> connected -> lost
+const phase = ref('probing')
 const errorText = ref('')
 const connectError = ref('')       // shown on the connect panel
 const connectBusy = ref(false)
-const webUsbSupported = ref(true)
+const choices = shallowRef([])     // more than one device answered: [{address, hello}]
 const hello = ref(null)
 const tabs = shallowRef([])
 const activeTab = ref('info')
@@ -20,12 +25,14 @@ const drawerOpen = ref(false)   // mobile: the firmware shell's slide-in sidebar
 
 const session = shallowRef(null)
 const dashboard = shallowRef(null)   // the lazily-imported src/dashboard/index.js module
-// A USBDevice object does not survive the device re-enumerating, but the permission does, so
-// remember which device it was and re-resolve it through navigator.usb.getDevices().
-const retainedSerial = ref(null)
+// Which device we were talking to, so a reconnect goes back to the same one.
+const retainedAddress = ref(null)
 
-const mockParam = new URLSearchParams(window.location.search).get('mock')
-
+// The demo device: 'tx' | 'rx' while one is open, from the connect panel or ?dashboard&mock=tx|rx.
+const demo = ref(new URLSearchParams(window.location.search).get('mock'))
+// Kept across the demo's simulated reboots, so changes made in the demo survive them.
+let demoSession = null
+let unsubscribeLost = null
 
 async function loadDashboardModule() {
   if (!dashboard.value) {
@@ -40,9 +47,11 @@ async function adopt(s) {
   phase.value = 'connecting'
   session.value = s
   hello.value = s.hello
-  retainedSerial.value = s.device?.serialNumber || null
+  retainedAddress.value = s.address || null
 
-  s.onLost((reason) => {
+  // A reconnect can hand back the same session (the demo), so drop the previous registration.
+  if (unsubscribeLost) unsubscribeLost()
+  unsubscribeLost = s.onLost((reason) => {
     // A reboot/reset drops the port too; the dashboard announces those in advance so we can
     // say "reconnect once it comes back" instead of reporting a failure.
     errorText.value = rebooting.value ? '' : reason
@@ -57,50 +66,139 @@ async function adopt(s) {
   await renderPanel()
 }
 
-/** Open a fresh session for the reconnect path, preferring the device that was open before. */
-async function connect({useChooser = false} = {}) {
-  const usb = await import('../js/usbconfig.js')
-  const s = mockParam ? new usb.MockTransport(mockParam) : new usb.UsbConfigSession()
-  let device = null
-  if (!useChooser && !mockParam) {
-    const known = await usb.getKnownDevices()
-    device = known.find((d) => d.serialNumber === retainedSerial.value) || known[0] || null
+async function newSession() {
+  if (demo.value) {
+    if (!demoSession) {
+      const {MockTransport} = await import('../js/demodevice.js')
+      demoSession = new MockTransport(demo.value)
+    }
+    return demoSession
   }
-  await s.connect(device)
+  const {HttpConfigSession} = await import('../js/netconfig.js')
+  return new HttpConfigSession()
+}
+
+/** Open a session to `address` (or the first device found) and build the panels for it. */
+async function connect(address = null) {
+  const s = await newSession()
+  await s.connect(address ? {address} : {})
   await adopt(s)
 }
 
 /**
- * The connect panel's button. WebUSB permission persists per origin, so a device granted before
- * is reopened without raising the chooser again; otherwise the chooser comes up from this click.
+ * The connect panel's button: find the devices on USB network links. One answers -> connect to
+ * it; a TX and an RX both plugged in -> let the user pick.
  */
-async function connectDevice() {
+async function connectDevice(address = null) {
   if (connectBusy.value) return
   connectError.value = ''
   connectBusy.value = true
-  let s = null
   try {
-    const usb = await import('../js/usbconfig.js')
-    s = mockParam ? new usb.MockTransport(mockParam) : new usb.UsbConfigSession()
-    const known = mockParam ? [] : await usb.getKnownDevices()
-    await s.connect(known.length === 1 ? known[0] : null)
-    await adopt(s)
-  } catch (err) {
-    if (s) { try { await s.disconnect() } catch { /* ignore */ } }
-    resetToIdle()
-    // Dismissing the device chooser is not an error worth reporting.
-    if (!(err && err.name === 'NotFoundError')) {
-      connectError.value = (err && err.message) || String(err)
+    if (!address && !demo.value) {
+      const {discoverDevices, unreachableHelp} = await import('../js/netconfig.js')
+      const found = await discoverDevices()
+      if (found.length === 0) {
+        connectError.value = unreachableHelp()
+        return
+      }
+      if (found.length > 1) {
+        choices.value = found
+        return
+      }
+      address = found[0].address
     }
+    choices.value = []
+    await connect(address)
+  } catch (err) {
+    resetToIdle()
+    connectError.value = (err && err.message) || String(err)
   } finally {
     connectBusy.value = false
   }
 }
 
+/**
+ * Opening the page: look for the device without waiting for the button. One device answers ->
+ * connect to it. None (each probe times out) -> the connect panel, without an error, as nothing
+ * was asked for yet. Several -> the panel with the choice.
+ *
+ * On a first visit the search raises Chrome's Local Network Access prompt, and the probes time
+ * out while it is still open. If the user then allows it, search again from the panel.
+ */
+async function autoConnect() {
+  if (demo.value) {
+    await connectDevice()
+    return
+  }
+  let found = []
+  try {
+    const {discoverDevices, localNetworkPermission} = await import('../js/netconfig.js')
+    const permission = await localNetworkPermission()
+    if (permission && permission.state !== 'granted') {
+      permission.addEventListener('change', () => {
+        if (permission.state === 'granted' && phase.value === 'idle' && !connectBusy.value && !unmounted) {
+          connectDevice()
+        }
+      }, {once: true})
+    }
+    // Blocked: every request fails at once, so there is nothing to wait for; the panel explains.
+    if (permission?.state !== 'denied') found = await discoverDevices()
+  } catch { /* fall back to the panel */ }
+  if (unmounted || phase.value !== 'probing') return
+  if (found.length === 1) {
+    try {
+      await connect(found[0].address)
+    } catch (err) {
+      resetToIdle()
+      connectError.value = (err && err.message) || String(err)
+    }
+    return
+  }
+  choices.value = found
+  phase.value = 'idle'
+}
+
+// The device chooser's cards, from each device's /hello.
+function deviceIcon(h) {
+  return h['module-type'] === 'RX' ? radioIcon : controllerIcon
+}
+
+function deviceTitle(h) {
+  return h['module-type'] === 'RX' ? 'Receiver' : 'Transmitter'
+}
+
+function deviceText({address, hello: h}) {
+  return `${h['product-name']} · firmware ${h.version} · ${address}`
+}
+
+/** The chooser's Search again: forget the list and look for devices afresh. */
+function rescan() {
+  choices.value = []
+  connectDevice()
+}
+
+/** The connect panel's demo buttons: open a simulated transmitter or receiver. */
+function startDemo(type) {
+  demo.value = type
+  demoSession = null
+  choices.value = []
+  connectDevice()
+}
+
 /** Drop the device and the panels, and show the connect panel again. */
 function resetToIdle() {
+  if (demo.value) {
+    demo.value = null
+    demoSession = null
+    // So a reload does not land back in the demo.
+    const url = new URL(window.location.href)
+    if (url.searchParams.has('mock')) {
+      url.searchParams.delete('mock')
+      window.history.replaceState(window.history.state, '', url)
+    }
+  }
   session.value = null
-  retainedSerial.value = null
+  retainedAddress.value = null
   hello.value = null
   tabs.value = []
   rebooting.value = false
@@ -111,9 +209,8 @@ function resetToIdle() {
 }
 
 /**
- * The on-device UI reloads the page after a reboot; over USB the device re-enumerates instead, so
- * offer an explicit reconnect. The granted permission survives the re-enumeration, so this
- * normally reconnects silently; if the device cannot be re-resolved, fall back to the chooser.
+ * Go back to the same device once it is reachable again. After a reboot it takes a few seconds
+ * for the board to come back and the host to renew its address, so keep trying for a while.
  */
 async function reconnect() {
   rebooting.value = false
@@ -121,19 +218,19 @@ async function reconnect() {
   phase.value = 'connecting'
   try { await session.value?.disconnect() } catch { /* ignore */ }
   session.value = null
-  try {
-    await connect()
-  } catch (err) {
-    // Could not re-resolve it — raise the chooser. This still runs inside the Reconnect click,
-    // so the transient user activation WebUSB needs is intact.
+  const deadline = Date.now() + RECONNECT_WINDOW_MS
+  let lastErr = null
+  while (Date.now() < deadline) {
     try {
-      await connect({useChooser: true})
+      await connect(retainedAddress.value)
       return
-    } catch (err2) {
-      errorText.value = (err2 && err2.message) || String(err2)
+    } catch (err) {
+      lastErr = err
+      await new Promise((r) => setTimeout(r, 1000))
     }
-    phase.value = 'lost'
   }
+  errorText.value = (lastErr && lastErr.message) || 'Device did not come back'
+  phase.value = 'lost'
 }
 
 function clearPanel() {
@@ -177,17 +274,32 @@ function onRebootAnnounced() {
   rebooting.value = true
 }
 
+// How long a reconnect keeps looking for the device after a reboot, and how long to wait before
+// starting to look.
+const RECONNECT_WINDOW_MS = 20000
+const REBOOT_SETTLE_MS = 2000
+
+// Over the network there is no chooser needing a click, so a device that announced a reboot is
+// picked up again on its own once it is back.
+watch(phase, async (p) => {
+  if (p === 'lost' && rebooting.value && (retainedAddress.value || demo.value)) {
+    // The device answers the reboot request before it goes down: give it time to actually leave,
+    // or the first attempt reconnects to it just before it reboots.
+    await new Promise((r) => setTimeout(r, REBOOT_SETTLE_MS))
+    if (phase.value === 'lost' && rebooting.value) reconnect()
+  }
+})
+
+let unmounted = false
+
 onMounted(async () => {
   window.addEventListener('td-device-rebooting', onRebootAnnounced)
-  // Load the chunk now so the Connect click reaches requestDevice() without spending its
-  // transient user activation on a network fetch.
-  const usb = await import('../js/usbconfig.js')
-  webUsbSupported.value = usb.isWebUsbSupported() || !!mockParam
-  // ?dashboard&mock=tx|rx (dev): the fixture transport needs no port and no user gesture.
-  if (mockParam) await connectDevice()
+  // ?dashboard&mock=tx|rx: straight into the demo device.
+  await autoConnect()
 })
 
 onBeforeUnmount(() => {
+  unmounted = true
   window.removeEventListener('td-device-rebooting', onRebootAnnounced)
   if (session.value) session.value.disconnect().catch(() => {})
 })
@@ -213,34 +325,52 @@ onBeforeUnmount(() => {
             <VCardTitle>Device Configuration</VCardTitle>
           </div>
           <VAlert v-if="connectError" type="error" variant="tonal" class="td-dash-connect-alert"
-                  closable @click:close="connectError = ''">
+                  style="white-space: pre-line" closable @click:close="connectError = ''">
             {{ connectError }}
           </VAlert>
-          <VAlert v-else-if="!webUsbSupported" type="warning" variant="tonal" class="td-dash-connect-alert">
-            This browser does not support WebUSB. Use Chrome, Edge or another Chromium-based
-            browser to configure a device over USB.
-          </VAlert>
-          <HoverCard min-height="100%" :interactive="false"
-                     :image="moduleIcon" :hover-image="moduleIcon"
-                     title="USB Device Config"
-                     text="Connect a TitanLRS device over USB
-                     and click &quot;Connect to Device&quot; to edit the settings straight from the browser.">
-            <template #action>
-              <VBtn color="primary" size="large" :loading="connectBusy"
-                    :disabled="!webUsbSupported" @click="connectDevice">
-                Connect to Device
-              </VBtn>
-            </template>
-          </HoverCard>
+          <!-- More than one device answered: one card per device, as on the Firmware page. -->
+          <template v-if="choices.length">
+            <p class="td-dash-choose">{{ choices.length }} devices found. Choose the one to configure.</p>
+            <div class="td-dash-choices">
+              <HoverCard v-for="c in choices" :key="c.address" min-height="100%"
+                         :image="deviceIcon(c.hello)" :hover-image="deviceIcon(c.hello)"
+                         :title="deviceTitle(c.hello)" :text="deviceText(c)"
+                         @click="connectDevice(c.address)"/>
+            </div>
+            <div class="td-dash-rescan">
+              <VBtn variant="text" size="small" :disabled="connectBusy" @click="rescan">Search again</VBtn>
+            </div>
+          </template>
+          <template v-else>
+            <HoverCard min-height="100%" :interactive="false"
+                       :image="moduleIcon" :hover-image="moduleIcon"
+                       title="USB Device Config"
+                       text="Connect a TitanLRS device over USB
+                       and click &quot;Connect to Device&quot; to edit the settings.">
+              <template #action>
+                <VBtn color="primary" size="large" :loading="connectBusy" @click="connectDevice()">
+                  Connect to Device
+                </VBtn>
+              </template>
+            </HoverCard>
+            <!-- No hardware to hand: the configurator against a simulated device. -->
+            <div class="td-dash-demo">
+              <span>Want to try a demo device?</span>
+              <div class="td-dash-demo-buttons">
+                <VBtn variant="outlined" :disabled="connectBusy" @click="startDemo('tx')">Try a demo transmitter</VBtn>
+                <VBtn variant="outlined" :disabled="connectBusy" @click="startDemo('rx')">Try a demo receiver</VBtn>
+              </div>
+            </div>
+          </template>
         </div>
       </VContainer>
     </div>
   </main>
 
-  <!-- Brief gap between connecting and the first panel; no controls, it is not a page. -->
-  <div v-else-if="phase === 'connecting' && !tabs.length" class="td-dash-loading">
+  <!-- The automatic search on opening, then the gap before the first panel; no controls. -->
+  <div v-else-if="phase === 'probing' || (phase === 'connecting' && !tabs.length)" class="td-dash-loading">
     <VProgressCircular indeterminate color="primary" size="28"/>
-    <span>Reading device configuration…</span>
+    <span>{{ phase === 'probing' ? 'Looking for a device…' : 'Reading device configuration…' }}</span>
   </div>
 
   <div v-else class="td-dashboard">
@@ -264,6 +394,11 @@ onBeforeUnmount(() => {
           <span>{{ statusText }}</span>
           <button class="td-btn td-btn-primary" :disabled="phase === 'connecting'" @click="reconnect">Reconnect</button>
         </div>
+        <!-- The demo device: say so, and the way out. -->
+        <div v-else-if="demo" class="td-dash-status-bar">
+          <span>Demo {{ demo === 'rx' ? 'receiver' : 'transmitter' }}: a simulated device, no hardware connected.</span>
+          <button class="td-btn td-btn-ghost" @click="resetToIdle">Exit demo</button>
+        </div>
         <!-- The ported Lit panels render here, exactly as #main does on-device. -->
         <div id="main" ref="panelHost"></div>
       </div>
@@ -278,9 +413,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Shown only between mounting with a live session and the first panel render. */
+/* The automatic search, then the gap before the first panel. Fills the shell's column below the
+   site header (App.vue's .td-shell), so the spinner sits in the middle of the visible page. */
 .td-dash-loading {
-  min-height: 60vh;
+  flex: 1 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -290,6 +426,40 @@ onBeforeUnmount(() => {
 
 .td-dash-connect-alert {
   margin-bottom: 12px;
+}
+
+.td-dash-choose {
+  margin: 0 0 12px;
+  color: var(--td-fg-mute);
+}
+
+.td-dash-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.td-dash-rescan {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* Under the connect card: the demo device buttons. */
+.td-dash-demo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 32px;
+  color: var(--td-fg-mute);
+}
+
+.td-dash-demo-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
 }
 
 /* ── Connected shell ────────────────────────────────────────────────────────
@@ -319,7 +489,7 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-/* Shown only while the device is unreachable (lost, rebooting, reconnecting). */
+/* Shown while the device is unreachable (lost, rebooting, reconnecting), or for the demo device. */
 .td-dashboard .td-dash-status-bar {
   display: flex;
   align-items: center;
