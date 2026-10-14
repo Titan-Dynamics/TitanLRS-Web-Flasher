@@ -8,7 +8,7 @@
 const TARGET_REPOS = [
   // Order matters: later entries override earlier ones on conflict.
   // Titan-Dynamics (custom TD targets) is the base, ELRS overwrites matching keys.
-  'https://raw.githubusercontent.com/Titan-Dynamics/targets/master/targets.json',
+  'https://raw.githubusercontent.com/Titan-Dynamics/TitanLRS-Targets/master/targets.json',
   'https://raw.githubusercontent.com/ExpressLRS/targets/master/targets.json',
 ]
 

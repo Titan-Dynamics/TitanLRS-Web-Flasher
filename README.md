@@ -2,11 +2,11 @@
 
 Web-hosted firmware flasher for TitanLRS firmware (ExpressLRS fork for Titan Dynamics).
 
-https://titan-dynamics.github.io/titan-web-flasher/
+https://titan-dynamics.github.io/TitanLRS-Web-Flasher/
 
 # Using the Titan Web Flasher
 
-Usage guide: https://github.com/Titan-Dynamics/titan-web-flasher/wiki/Using-the-Titan-Web-Flasher
+Usage guide: https://github.com/Titan-Dynamics/TitanLRS-Web-Flasher/wiki/Using-the-Titan-Web-Flasher
 
 ## Supported Flashing Methods
 
@@ -76,7 +76,7 @@ public/assets/
 
 ## Repository Information
 
-- **Web Flasher Fork**: https://github.com/Titan-Dynamics/web-flasher
+- **Web Flasher Fork**: https://github.com/Titan-Dynamics/TitanLRS-Web-Flasher
 - **Firmware Source**: https://github.com/Titan-Dynamics/TitanLRS/releases
 - **Backpack Source**: https://github.com/Titan-Dynamics/TitanLRS-Backpack/releases
 - **Upstream**: https://github.com/ExpressLRS/web-flasher
