@@ -6,12 +6,12 @@
   "description": "Web-hosted flasher for TitanLRS firmware (ExpressLRS fork for Titan Dynamics)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Titan-Dynamics/web-flasher.git"
+    "url": "https://github.com/Titan-Dynamics/TitanLRS-Web-Flasher.git"
   },
   "bugs": {
-    "url": "https://github.com/Titan-Dynamics/web-flasher/issues"
+    "url": "https://github.com/Titan-Dynamics/TitanLRS-Web-Flasher/issues"
   },
-  "homepage": "https://github.com/Titan-Dynamics/web-flasher#readme",
+  "homepage": "https://github.com/Titan-Dynamics/TitanLRS-Web-Flasher#readme",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

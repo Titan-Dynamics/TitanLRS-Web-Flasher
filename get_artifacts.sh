@@ -4,6 +4,7 @@ set -e
 # TitanLRS Configuration
 GITHUB_REPO="Titan-Dynamics/TitanLRS"
 GITHUB_BACKPACK_REPO="Titan-Dynamics/TitanLRS-Backpack"
+GITHUB_TARGETS_REPO="Titan-Dynamics/TitanLRS-Targets"
 
 github_api_get() {
   local url="$1"
@@ -225,7 +226,7 @@ done
 echo "📥 Downloading hardware definitions..."
 mkdir -p hardware
 cd hardware
-HARDWARE_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/master/src/hardware/targets.json"
+HARDWARE_URL="https://raw.githubusercontent.com/${GITHUB_TARGETS_REPO}/master/targets.json"
 curl -L -f "${HARDWARE_URL}" -o targets.json || {
   echo "⚠️  Warning: Could not download targets.json from master branch"
   echo "Using targets.json from firmware archive if available..."
