@@ -163,13 +163,66 @@ const HARDWARE_SCHEMA = [
                 desc: 'SX127x PA to use, either the RFO_HF or PA_BOOST (depends on circuit design)'
             },
             {
-                feature: 'HAS_LR1121',
+                feature: 'RADIO_LR1121',
                 id: 'radio_rfsw_ctrl',
                 label: 'LR1121 RF Switch Controls',
                 type: 'array',
                 size: 40,
                 icon: null,
                 desc: 'Comma-separated list of 8 values used for setting the LR1121 RF switch controls'
+            },
+            {
+                feature: 'RADIO_LR1121',
+                id: 'radio_tcxo',
+                label: 'LR1121 TCXO voltage select',
+                type: 'select',
+                options: [
+                    {value: -1, label: 'External'},
+                    {value: 0, label: '1.6V'}, {value: 1, label: '1.7V'}, {value: 2, label: '1.8V'},
+                    {value: 3, label: '2.2V'}, {value: 4, label: '2.4V'}, {value: 5, label: '2.7V'},
+                    {value: 6, label: '3.0V'}, {value: 7, label: '3.3V'}
+                ],
+                desc: 'Specify the voltage on the VTCXO pin. External, means the TCXO is externally powered'
+            },
+            {
+                feature: 'RADIO_LR1121',
+                id: 'radio_tcxo_delay',
+                label: 'LR1121 TCXO start time',
+                type: 'uint',
+                size: 11,
+                icon: null,
+                desc: 'How long (in 30.52us steps) for the TCXO to stabilize'
+            },
+            {
+                feature: 'RADIO_LR2021',
+                id: 'radio_rfsw_ctrl',
+                label: 'LR2021 RF Switch Controls',
+                type: 'array',
+                size: 40,
+                icon: null,
+                desc: 'Comma-separated list of 7 values used for setting the LR2021 RF switch controls'
+            },
+            {
+                feature: 'RADIO_LR2021',
+                id: 'radio_tcxo',
+                label: 'LR2021 TCXO voltage select',
+                type: 'select',
+                options: [
+                    {value: -1, label: 'External'},
+                    {value: 0, label: '1.6V'}, {value: 1, label: '1.7V'}, {value: 2, label: '1.8V'},
+                    {value: 3, label: '2.2V'}, {value: 4, label: '2.4V'}, {value: 5, label: '2.7V'},
+                    {value: 6, label: '3.0V'}, {value: 7, label: '3.3V'}
+                ],
+                desc: 'Specify the voltage on the VTCXO pin. External, means the TCXO is externally powered'
+            },
+            {
+                feature: 'RADIO_LR2021',
+                id: 'radio_tcxo_delay',
+                label: 'LR2021 TCXO start time',
+                type: 'uint',
+                size: 11,
+                icon: null,
+                desc: 'How long (in ticks) for the TCXO to stabilize'
             },
         ]
     },
@@ -708,7 +761,6 @@ const HARDWARE_SCHEMA = [
     },
 
     {
-        feature: 'IS_TX',
         title: 'I2C & Misc Devices', rows: [
             {
                 feature: 'IS_TX',
@@ -727,7 +779,6 @@ const HARDWARE_SCHEMA = [
                 desc: 'I2C data pin used to communicate with I2C devices (may be the same as OLED I2C)'
             },
             {
-                feature: 'IS_TX',
                 id: 'misc_fan_en',
                 label: 'Fan enable pin',
                 type: 'uint',
@@ -958,21 +1009,17 @@ const HARDWARE_SCHEMA = [
     },
 ];
 
-/*
- * DASHBOARD ADDITION (see PORTING.md): the layout keys the unified STM32 target headers
- * (include/target/Unified_STM32_{TX,RX}.h) map to the layout. Every device the dashboard reaches
- * over the USB config API is an STM32 one, so the Hardware panel shows only these rows; the rest
- * of the schema is ESP-only hardware those builds never read.
- */
 export const STM32_HARDWARE_KEYS = [
-    'serial_rx', 'serial_tx',
+    'serial_rx', 'serial_tx', 'serial1_rx', 'serial1_tx',
     'radio_nss', 'radio_sck', 'radio_miso', 'radio_mosi', 'radio_rst', 'radio_dio1', 'radio_busy',
     'radio_nss_2', 'radio_rst_2', 'radio_dio1_2', 'radio_busy_2', 'radio_dcdc',
+    'radio_rfsw_ctrl', 'radio_tcxo', 'radio_tcxo_delay',
     'power_min', 'power_high', 'power_max', 'power_default', 'power_control',
     'power_values', 'power_values2', 'power_values_dual',
     'led', 'led_red', 'led_red_invert', 'led_blue', 'led_blue_invert',
     'button', 'button_active_high', 'button2', 'button2_active_high',
     'config_flash_cs', 'config_flash_sck', 'config_flash_miso', 'config_flash_mosi',
+    'misc_fan_en',
 ];
 
 export default HARDWARE_SCHEMA;

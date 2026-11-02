@@ -299,6 +299,59 @@
   width: 14px;
   height: 14px;
 }
+/* Hardware panel: a container query, because the width that matters is what the sidebar leaves. */
+.td-dashboard .td-hw-layout {
+  container-type: inline-size;
+}
+.td-dashboard .td-hw-table {
+  table-layout: fixed;
+}
+.td-dashboard .td-hw-col-label { width: 220px;
+}
+.td-dashboard .td-hw-col-field { width: 240px;
+}
+.td-dashboard .td-hw-table td {
+  padding-top: var(--td-s-1);
+  padding-bottom: var(--td-s-1);
+}
+.td-dashboard .td-hw-table input.array {
+  width: 100%;
+}
+@container (max-width: 720px) {
+.td-dashboard .td-hw-table colgroup { display: none;
+}
+.td-dashboard .td-hw-table,
+.td-dashboard .td-hw-table tbody,
+.td-dashboard .td-hw-table .td-table-section-header,
+.td-dashboard .td-hw-table .td-table-section-header td {
+  display: block;
+  height: auto;
+}
+.td-dashboard .td-hw-table tr:not(.td-table-section-header) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--td-s-1) var(--td-s-3);
+  padding: var(--td-s-2) var(--td-s-3);
+  border-bottom: 1px solid var(--td-line);
+}
+.td-dashboard .td-hw-table tr:not(.td-table-section-header) td {
+  display: block;
+  height: auto;
+  padding: 0;
+  border-bottom: none;
+}
+.td-dashboard .td-hw-table tr:not(.td-table-section-header) td:nth-child(3) { grid-column: 1 / -1;
+}
+.td-dashboard .td-hw-table tr:not(.td-table-section-header) td:empty { display: none;
+}
+.td-dashboard .td-hw-table tr.td-hw-row-wide td { grid-column: 1 / -1;
+}
+.td-dashboard .td-hw-table input[type="text"],
+.td-dashboard .td-hw-table select {
+  height: 32px;
+}
+}
 .td-dashboard .td-progress-wrap {
   margin: var(--td-s-4) 0 0;
 }

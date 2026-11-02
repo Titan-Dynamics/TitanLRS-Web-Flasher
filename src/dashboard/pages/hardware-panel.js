@@ -25,9 +25,12 @@ function featureEnabled(tag) {
         IS_8285: false,
         HAS_SX127X: radio === 'SX127X',
         HAS_SX128X: radio === 'SX128X',
-        // The firmware gates the dual-band rows (RF switch, power_values_dual) on LR1121; the
-        // LR2021 is dual-band too.
+        // The firmware gates the dual-band rows (power_values_dual) on LR1121; the LR2021 is
+        // dual-band too.
         HAS_LR1121: radio === 'LR1121' || radio === 'LR2021',
+        // Rows that differ per chip (RF switch table, TCXO) share an id, so only one may render.
+        RADIO_LR1121: radio === 'LR1121',
+        RADIO_LR2021: radio === 'LR2021',
     }
     return negate ? !flags[name] : !!flags[name]
 }
@@ -110,7 +113,13 @@ export class HardwarePanel extends LitElement {
 
     _renderTable() {
         return html`
-            <table class="td-table">
+            <div class="td-hw-layout">
+            <table class="td-table td-hw-table">
+                <colgroup>
+                    <col class="td-hw-col-label"/>
+                    <col class="td-hw-col-field"/>
+                    <col/>
+                </colgroup>
                 <tbody>
                 ${visibleSchema().map(section => html`
                     <tr class="td-table-section-header">
@@ -119,7 +128,7 @@ export class HardwarePanel extends LitElement {
                         </td>
                     </tr>
                     ${section.rows.map(row => html`
-                        <tr>
+                        <tr class="${row.type === 'array' ? 'td-hw-row-wide' : ''}">
                             <td style="color: var(--td-fg-mute);">${row.label}</td>
                             <td>${this._renderField(row)}</td>
                             <td class="td-small td-mute">${row.desc || ''}</td>
@@ -128,6 +137,7 @@ export class HardwarePanel extends LitElement {
                 `)}
                 </tbody>
             </table>
+            </div>
         `
     }
 
