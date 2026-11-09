@@ -1,21 +1,28 @@
 import {html, LitElement} from "lit"
 import {customElement, state} from "lit/decorators.js"
-import {elrsState, saveOptions} from "../utils/state.js"
+import {elrsState, saveConfig, saveOptions} from "../utils/state.js"
 
 import {actionWithConfirm} from "../utils/feedback.js"
 import {transport} from "../utils/transport.js"
 import FEATURES from "../features.js"
+
+const GCS_CHANNELS = Array.from({length: 16}, (_, i) => i + 1)
+const GCS_ENABLE_CHANNELS = GCS_CHANNELS.slice(4)
 
 @customElement('tx-options-panel')
 class TxOptionsPanel extends LitElement {
     @state() accessor domain
     @state() accessor tlmInterval
     @state() accessor fanRuntime
+    // The device's gcs-override config ({enabled, channel, mask}), as edited; absent on firmware without it
+    @state() accessor gcsOverride
 
     createRenderRoot() {
         this.domain = elrsState.options.domain
         this.tlmInterval = elrsState.options['tlm-interval']
         this.fanRuntime = elrsState.options['fan-runtime']
+        const gcsOverride = elrsState.config['gcs-override']
+        this.gcsOverride = gcsOverride ? {...gcsOverride} : null
         return this
     }
 
@@ -83,6 +90,54 @@ class TxOptionsPanel extends LitElement {
                     `}
                 </div>
             </div>
+
+            ${this.gcsOverride ? html`
+                <div class="td-card" style="margin-bottom: var(--td-s-4);">
+                    <div class="td-card-header">
+                        <span class="td-h4">GCS Override</span>
+                    </div>
+
+                    <div class="td-card-row">
+                        <span class="td-label">Allow a remote GCS to override channels</span>
+                        <span class="td-toggle ${this.gcsOverride.enabled ? 'is-on' : ''}"
+                              @click="${() => this._setGcs({enabled: !this.gcsOverride.enabled})}"></span>
+                    </div>
+
+                    ${this.gcsOverride.enabled ? html`
+                        <div class="td-card-row">
+                            <span class="td-label">Override enable channel (handset only)</span>
+                            <select class="td-select" style="width: auto;"
+                                    @change="${(e) => this._setGcsEnableChannel(parseInt(e.target.value))}"
+                                    .value="${String(this.gcsOverride.channel)}">
+                                ${GCS_ENABLE_CHANNELS.map((ch) => html`
+                                    <option value="${ch}" ?selected="${this.gcsOverride.channel === ch}">CH${ch}</option>
+                                `)}
+                            </select>
+                        </div>
+                        <div class="td-card-row" style="align-items: flex-start;">
+                            <span class="td-label">Forward these channels from the GCS</span>
+                            <div class="td-channel-grid-wrap"><div class="td-channel-grid">
+                                ${GCS_CHANNELS.map((ch) => html`
+                                    <label style="display: inline-flex; align-items: center; gap: 4px; ${ch === this.gcsOverride.channel ? 'opacity: 0.4;' : ''}">
+                                        <input type="checkbox"
+                                               .checked="${this._gcsForwards(ch)}"
+                                               ?disabled="${ch === this.gcsOverride.channel}"
+                                               @change="${(e) => this._setGcsForward(ch, e.target.checked)}"/>
+                                        <span class="td-mono">CH${ch}</span>
+                                    </label>
+                                `)}
+                            </div></div>
+                        </div>
+                    ` : ''}
+
+                    <div style="padding: var(--td-s-3) var(--td-s-4); border-top: 1px solid var(--td-line); display: flex; align-items: center; gap: var(--td-s-2);">
+                        <div style="flex: 1;"></div>
+                        <button class="td-btn td-btn-primary"
+                                ?disabled="${!this._gcsChanged()}"
+                                @click="${this._saveGcs}">Save &amp; Reboot</button>
+                    </div>
+                </div>
+            ` : ''}
         `
     }
 
@@ -98,6 +153,34 @@ class TxOptionsPanel extends LitElement {
         }
         // Every option is applied during setup(), so this is a confirm-save-reboot flow.
         saveOptions(changes, () => { return this.requestUpdate() }, {reboot: true})
+    }
+
+    _saveGcs(e) {
+        e.preventDefault()
+        saveConfig({'gcs-override': {...this.gcsOverride}}, () => this.requestUpdate())
+    }
+
+    _setGcs(changes) {
+        this.gcsOverride = {...this.gcsOverride, ...changes}
+    }
+
+    _gcsForwards(ch) {
+        return ch !== this.gcsOverride.channel && (this.gcsOverride.mask & (1 << (ch - 1))) !== 0
+    }
+
+    _setGcsForward(ch, on) {
+        const bit = 1 << (ch - 1)
+        this._setGcs({mask: on ? (this.gcsOverride.mask | bit) : (this.gcsOverride.mask & ~bit)})
+    }
+
+    // The enable channel can't also come from the GCS
+    _setGcsEnableChannel(ch) {
+        this._setGcs({channel: ch, mask: this.gcsOverride.mask & ~(1 << (ch - 1))})
+    }
+
+    _gcsChanged() {
+        const saved = elrsState.config['gcs-override']
+        return !!saved && ['enabled', 'channel', 'mask'].some((k) => this.gcsOverride[k] !== saved[k])
     }
 
     checkChanged() {

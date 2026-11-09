@@ -282,6 +282,7 @@ function mockDocument(isTx) {
           {color: 255, action: [{'is-long-press': false, count: 3, action: 6},
                                 {'is-long-press': true, count: 5, action: 1}]},
         ],
+        'gcs-override': {enabled: false, channel: 16, mask: 0x000F},
       },
     }
   }
