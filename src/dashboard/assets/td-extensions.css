@@ -384,3 +384,13 @@
   margin-bottom: var(--td-s-4);
   font-size: var(--td-fs-sm);
 }
+
+.td-dashboard .td-channel-grid-wrap { container-type: inline-size; min-width: 0; }
+.td-dashboard .td-channel-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 60px);
+  gap: var(--td-s-2) var(--td-s-3);
+}
+@container (max-width: 275.98px) {
+  .td-dashboard .td-channel-grid { grid-template-columns: repeat(2, 60px); }
+}
