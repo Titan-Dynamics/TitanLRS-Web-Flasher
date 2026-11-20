@@ -1,0 +1,98 @@
+/* RF Tools panel (pages/rf-tools-panel.js). Flasher-only, so it is not part of the scoped copy of the
+   firmware's stylesheets; scoped to .td-dashboard the same way. The panel is built from the
+   standard td components; this only adds the charts and the few bits they need. */
+
+.td-dashboard {
+  /* chart roles; the two series are categorical slots 1 and 2, validated on --td-bg-2 */
+  --rf-series-1: #3987e5;
+  --rf-series-2: #d95926;
+  --rf-grid: rgba(255, 255, 255, 0.06);
+  --rf-axis: rgba(255, 255, 255, 0.18);
+  --rf-label: var(--td-fg-dim);
+  --rf-text: var(--td-fg);
+  --rf-surface: var(--td-bg-2);
+  --rf-hover: rgba(255, 255, 255, 0.04);
+  --rf-font: 11px 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.td-dashboard .rf-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--td-s-2);
+  padding: var(--td-s-3) var(--td-s-4);
+  border-top: 1px solid var(--td-line);
+}
+
+.td-dashboard .rf-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--td-s-3);
+}
+
+.td-dashboard .rf-results {
+  border-top: 1px solid var(--td-line);
+  padding: var(--td-s-2) var(--td-s-4) var(--td-s-4);
+}
+.td-dashboard .rf-table td {
+  font-family: var(--td-mono);
+  font-variant-numeric: tabular-nums;
+}
+.td-dashboard .rf-table td.rf-name { font-family: inherit; }
+.td-dashboard .rf-table tr:hover td { background: none; }
+.td-dashboard .rf-key {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--td-s-2);
+  border-radius: 2px;
+}
+
+.td-dashboard .rf-chart {
+  position: relative;
+  width: 100%;
+  height: 280px;
+  margin-top: var(--td-s-4);
+  touch-action: pan-y;
+}
+.td-dashboard .rf-chart canvas { display: block; }
+.td-dashboard .rf-chart-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  pointer-events: none;
+  padding: 8px 10px;
+  font-size: var(--td-fs-sm);
+  line-height: var(--td-lh-sm);
+  color: var(--td-fg);
+  background: var(--td-bg-4);
+  border: 1px solid var(--td-line-2);
+  border-radius: var(--td-r-md);
+  white-space: nowrap;
+}
+.td-dashboard .rf-chart-tip[hidden] { display: none; }
+.td-dashboard .rf-tip-head { margin-bottom: 4px; }
+.td-dashboard .rf-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.td-dashboard .rf-tip-row .rf-key { margin-right: 0; }
+.td-dashboard .rf-tip-label { color: var(--td-fg-mute); }
+.td-dashboard .rf-tip-value {
+  margin-left: auto;
+  padding-left: 12px;
+  font-family: var(--td-mono);
+}
+.td-dashboard .rf-tip-dim { color: var(--td-fg-dim); }
+
+@media (max-width: 640px) {
+  .td-dashboard .rf .td-card-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .td-dashboard .rf .td-select { max-width: 100%; }
+  .td-dashboard .rf-results { overflow-x: auto; }
+  .td-dashboard .rf-chart { height: 220px; }
+}

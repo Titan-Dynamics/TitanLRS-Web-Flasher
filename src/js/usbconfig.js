@@ -10,7 +10,7 @@
 export const PROTOCOL_VERSION = 2
 
 export const FEATURE_OPTIONS_WRITE = 1 << 0
-export const FEATURE_CW = 1 << 1
+export const FEATURE_RF_DIAG = 1 << 1   // /rfdiag: RSSI scanner and continuous wave
 export const FEATURE_LR1121_UPDATE = 1 << 2
 export const FEATURE_CRSF_PARAMS = 1 << 3
 export const FEATURE_DFU = 1 << 4
