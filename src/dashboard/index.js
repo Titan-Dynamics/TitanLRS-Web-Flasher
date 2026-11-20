@@ -15,11 +15,13 @@
 import './assets/td.js'
 import './assets/td.css'
 import './assets/td-extensions.css'
+import './assets/rf-tools.css'
 
 import {setTransport} from './utils/transport.js'
 import {elrsState} from './utils/state.js'
 import {applyFeatures, FEATURES} from './features.js'
-import {FEATURE_CRSF_PARAMS, FEATURE_HARDWARE_WRITE, FEATURE_OPTIONS_WRITE} from '../js/usbconfig.js'
+import {FEATURE_CRSF_PARAMS, FEATURE_HARDWARE_WRITE, FEATURE_OPTIONS_WRITE, FEATURE_RF_DIAG} from '../js/usbconfig.js'
+import {transport} from './utils/transport.js'
 
 // Panels register themselves as custom elements on import.
 import './pages/info-panel.js'
@@ -32,6 +34,7 @@ import './pages/connections-panel.js'
 import './pages/serial-panel.js'
 import './pages/params-panel.js'
 import './pages/hardware-panel.js'
+import './pages/rf-tools-panel.js'
 
 export {FEATURES, elrsState}
 
@@ -57,6 +60,9 @@ export async function initDashboard(session) {
     hardwareWrite: typeof session.hasFeature === 'function'
       ? session.hasFeature(FEATURE_HARDWARE_WRITE)
       : false,
+    rfDiag: typeof session.hasFeature === 'function'
+      ? session.hasFeature(FEATURE_RF_DIAG)
+      : false,
   })
   return {...data, features: FEATURES}
 }
@@ -67,6 +73,14 @@ export async function initDashboard(session) {
 export async function reloadDashboard(session) {
   return initDashboard(session)
 }
+
+/** End the RF diagnostics from outside the panel (the shell's status bar). Reboots the device. */
+export function endRfDiagnostics() {
+  return transport.endRfDiag()
+}
+
+/** The id of the RF Tools tab, for the shell's status bar. */
+export const RF_TOOLS_TAB = 'rftools'
 
 /**
  * Which tabs a device gets. Driven entirely by HELLO + the shape of the config document, which
@@ -85,6 +99,10 @@ export function tabsFor(config) {
   const hardwareTab = FEATURES.HARDWARE_WRITE
     ? [{id: 'hardware', label: 'Hardware', icon: 'cpu', tag: 'hardware-panel'}]
     : []
+  // Bench tools (RSSI scanner, continuous wave), in their own sidebar section.
+  const rfTab = FEATURES.RF_DIAG
+    ? [{id: RF_TOOLS_TAB, label: 'RF Tools', icon: 'activity', tag: 'rf-tools-panel', section: 'Diagnostics'}]
+    : []
 
   if (FEATURES.IS_TX) {
     const tabs = [
@@ -98,6 +116,7 @@ export function tabsFor(config) {
     }
     tabs.push({id: 'models', label: 'Import/Export', icon: 'box', tag: 'models-panel'})
     tabs.push(...hardwareTab)
+    tabs.push(...rfTab)
     return tabs
   }
   const tabs = [
@@ -113,5 +132,6 @@ export function tabsFor(config) {
     tabs.push({id: 'connections', label: 'Connections', icon: 'link', tag: 'connections-panel'})
   }
   tabs.push(...hardwareTab)
+  tabs.push(...rfTab)
   return tabs
 }

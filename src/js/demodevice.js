@@ -13,7 +13,8 @@
 
 import {CRSF} from './crsf.js'
 import {
-  FEATURE_CRSF_PARAMS, FEATURE_DFU, FEATURE_HARDWARE_WRITE, FEATURE_OPTIONS_WRITE, PROTOCOL_VERSION,
+  DeviceError, ERR_BAD_REQUEST, ERR_BUSY,
+  FEATURE_CRSF_PARAMS, FEATURE_DFU, FEATURE_HARDWARE_WRITE, FEATURE_OPTIONS_WRITE, FEATURE_RF_DIAG, PROTOCOL_VERSION,
 } from './usbconfig.js'
 
 /*
@@ -348,6 +349,210 @@ const MOCK_XR4 = {
   config: {modelid: 255, 'serial-protocol': 7, 'serial1-protocol': 0, 'sbus-failsafe': 0, vbind: 0},
 }
 
+/*
+ * The RF diagnostics (GET/POST /rfdiag, /rfdiag/samples) of src/rf_diag.cpp, with a made-up RF
+ * environment so the RSSI scanner has something to show: a noise floor that follows the receive
+ * bandwidth, a steady carrier near the middle of each band, bursty Wi-Fi-like energy low in 2.4 GHz
+ * and an intermittent weak signal on sub-GHz. Radio 2 sees the same air with its own noise and a
+ * slightly different gain. `&armed` makes the device refuse to start, as an armed module does.
+ */
+const MOCK_SUBGHZ_DOMAINS = {
+  AU915: [915500000, 926900000, 20],
+  FCC915: [903500000, 926900000, 40],
+  EU868: [863275000, 869575000, 13],
+  IN866: [865375000, 866950000, 4],
+  AU433: [433420000, 434420000, 3],
+  EU433: [433100000, 434450000, 3],
+  US433: [433250000, 438000000, 8],
+  US433W: [423500000, 438000000, 20],
+  TH920: [920500000, 924500000, 8],
+}
+const MOCK_RF_PERIOD_US = 1000
+const MOCK_RF_RING = 4096
+const MOCK_RF_MAX_RESPONSE = 400
+const MOCK_POWER_MW = [10, 25, 50, 100, 250, 500, 1000, 2000]
+
+function mockBand(id, domain, [start, stop, count], hardware) {
+  const high = id === 'high'
+  const values = high ? hardware.power_values_dual : hardware.power_values
+  return {
+    id, domain, start, stop, count,
+    spread: Math.round((stop - start) / (count - 1)),
+    center: Math.floor(count / 2),
+    sequence: count * Math.floor(256 / count),
+    bandwidths: high ? [62500, 500000, 812000] : [62500, 500000],
+    'default-bandwidth': high ? 812000 : 500000,
+    'raw-power': high ? {min: -19.5, max: 12, step: 0.5} : {min: -22, max: 22, step: 0.5},
+    'power-values': values.slice(hardware.power_min, hardware.power_max + 1).map((v) => v / 2),
+  }
+}
+
+class MockRfDiag {
+  constructor(settings, hardware) {
+    this.hardware = hardware
+    this.settings = settings
+    this.state = null
+    this.seq = 0
+    this.since = 0
+    this.ring = []
+    this.lastMs = 0
+    this.hop = 0
+    this.sequences = {}
+  }
+
+  get active() { return this.state !== null }
+
+  bands() {
+    const low = this.settings.reg_domain_low || 'FCC915'
+    return [
+      mockBand('low', low, MOCK_SUBGHZ_DOMAINS[low] || MOCK_SUBGHZ_DOMAINS.FCC915, this.hardware),
+      mockBand('high', 'ISM2G4', [2400400000, 2479400000, 80], this.hardware),
+    ]
+  }
+
+  band(id) { return this.bands().find((b) => b.id === id) }
+
+  defaults() {
+    const b = this.band('low')
+    return {mode: 'off', band: 'low', channel: b.center, hop: false, radio: 1, bandwidth: b['default-bandwidth'],
+      power: this.hardware.power_min, 'raw-power': null}
+  }
+
+  describe() {
+    const cur = this.state || this.defaults()
+    const b = this.band(cur.band)
+    return {
+      active: this.active,
+      ...(!this.active && new URLSearchParams(window.location.search).has('armed') ? {blocked: 'module is armed'} : {}),
+      radios: 2,
+      'sample-period-us': MOCK_RF_PERIOD_US,
+      bands: this.bands(),
+      'power-levels': MOCK_POWER_MW.slice(this.hardware.power_min, this.hardware.power_max + 1)
+        .map((mw, i) => ({level: this.hardware.power_min + i, mw})),
+      state: {...cur, freq: b.start + b.spread * cur.channel, since: this.since},
+    }
+  }
+
+  apply(req) {
+    if (!this.active && new URLSearchParams(window.location.search).has('armed')) {
+      throw new DeviceError(ERR_BUSY, 'module is armed')
+    }
+    const next = {...(this.state || this.defaults())}
+    if (req.mode !== 'rssi' && req.mode !== 'cw') throw new DeviceError(ERR_BAD_REQUEST, 'mode must be "rssi" or "cw"')
+    next.mode = req.mode
+    if (req.band !== undefined && req.band !== next.band) {
+      const b = this.band(req.band)
+      if (!b) throw new DeviceError(ERR_BAD_REQUEST, 'band not available on this hardware')
+      next.band = req.band
+      next.channel = b.center
+      if (!b.bandwidths.includes(next.bandwidth)) next.bandwidth = b['default-bandwidth']
+    }
+    const b = this.band(next.band)
+    for (const key of ['channel', 'hop', 'radio', 'bandwidth', 'power', 'raw-power']) {
+      if (req[key] !== undefined) next[key] = req[key]
+    }
+    if (next.channel < 0 || next.channel >= b.count) throw new DeviceError(ERR_BAD_REQUEST, 'channel out of range')
+    if (next.mode === 'cw' && next.radio === 3) {
+      if (req.radio !== undefined) throw new DeviceError(ERR_BAD_REQUEST, 'continuous wave runs on one radio at a time')
+      next.radio = 1
+    }
+    if (!b.bandwidths.includes(next.bandwidth)) throw new DeviceError(ERR_BAD_REQUEST, 'bandwidth not available on this band')
+    const raw = next['raw-power']
+    if (raw !== null && (raw < b['raw-power'].min || raw > b['raw-power'].max)) next['raw-power'] = null
+    this.state = next
+    this.since = this.seq
+    this.hop = 0
+    this.lastMs = performance.now()
+    return this.describe()
+  }
+
+  _sequence(band) {
+    if (!this.sequences[band.id]) {
+      // a fixed shuffle, standing in for the UID-seeded hop table
+      let seed = band.count * 7919
+      const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff
+      const seq = []
+      for (let rep = 0; rep < Math.floor(256 / band.count); rep++) {
+        const block = [...Array(band.count).keys()]
+        for (let i = block.length - 1; i > 0; i--) {
+          const j = Math.floor(rand() * (i + 1));
+          [block[i], block[j]] = [block[j], block[i]]
+        }
+        seq.push(...block)
+      }
+      this.sequences[band.id] = seq
+    }
+    return this.sequences[band.id]
+  }
+
+  _rssi(freq, bandwidth, radio, tMs, band) {
+    const mw = (dbm) => Math.pow(10, dbm / 10)
+    const floor = -174 + 10 * Math.log10(bandwidth) + (radio === 2 ? 6.2 : 5.5)
+    // the RSSI estimator averages over a short window, so the floor wobbles by a few dB
+    let noise = 0
+    for (let k = 0; k < 4; k++) noise -= Math.log(Math.random() || 1e-9)
+    let power = mw(floor) * noise / 4
+    const inBand = (f, width = 0) => Math.abs(freq - f) <= bandwidth / 2 + width / 2
+    const gain = radio === 2 ? 1.5 : 0
+    const centre = band.start + band.spread * band.center
+    if (freq < 1e9) {
+      if (inBand(centre)) power += mw(-63 + gain + Math.random() * 0.8)
+      if (inBand(band.start + band.spread * Math.floor(band.count / 5)) && (tMs % 900) < 280) power += mw(-96 + gain + Math.random() * 3)
+    } else {
+      if (inBand(2412000000, 20e6) && Math.random() < 0.35) power += mw(-79 + gain - Math.abs(freq - 2412e6) / 2e6 + Math.random() * 6)
+      if (inBand(centre)) power += mw(-71 + gain + Math.random() * 0.8)
+    }
+    return Math.round(10 * Math.log10(power))
+  }
+
+  _generate() {
+    const now = performance.now()
+    let n = Math.floor((now - this.lastMs) * 1000 / MOCK_RF_PERIOD_US)
+    if (n <= 0) return
+    this.lastMs += n * MOCK_RF_PERIOD_US / 1000
+    n = Math.min(n, MOCK_RF_RING)
+    const st = this.state
+    const b = this.band(st.band)
+    const sequence = this._sequence(b)
+    for (let k = 0; k < n; k++) {
+      const ch = st.hop ? sequence[this.hop] : st.channel
+      const freq = b.start + b.spread * ch
+      const t = this.seq * MOCK_RF_PERIOD_US / 1000
+      this.ring.push({
+        ch,
+        r1: st.radio & 1 ? this._rssi(freq, st.bandwidth, 1, t, b) : 0,
+        r2: st.radio & 2 ? this._rssi(freq, st.bandwidth, 2, t, b) : 0,
+      })
+      if (this.ring.length > MOCK_RF_RING) this.ring.shift()
+      this.seq++
+      if (st.hop) this.hop = (this.hop + 1) % sequence.length
+    }
+  }
+
+  samples(from) {
+    const st = this.state
+    const rssi = st && st.mode === 'rssi'
+    if (rssi) this._generate()
+    if (from > this.seq) from = this.seq
+    let lost = 0
+    if (this.seq - from > this.ring.length) {
+      lost = this.seq - from - this.ring.length
+      from = this.seq - this.ring.length
+    }
+    let count = rssi ? this.seq - from : 0
+    const more = count > MOCK_RF_MAX_RESPONSE
+    count = Math.min(count, MOCK_RF_MAX_RESPONSE)
+    const first = this.ring.length - (this.seq - from)
+    const slice = this.ring.slice(first, first + count)
+    const doc = {mode: st ? st.mode : 'off', from, next: from + count, since: this.since, lost, more,
+      period: MOCK_RF_PERIOD_US, hop: !!st?.hop}
+    if (rssi && st.hop) doc.ch = slice.map((x) => x.ch)
+    if (rssi && st.radio & 1) doc.r1 = slice.map((x) => x.r1)
+    if (rssi && st.radio & 2) doc.r2 = slice.map((x) => x.r2)
+    return doc
+  }
+}
+
 const MOCK_CONFIG_FLASH_KEYS = ['config_flash_cs', 'config_flash_sck', 'config_flash_miso', 'config_flash_mosi']
 
 export class MockTransport {
@@ -361,12 +566,13 @@ export class MockTransport {
     // `&nohw` clears the hardware-override bit, i.e. firmware without config-flash storage.
     const noHardware = params.has('nohw')
     this.features = (readOnly ? 0 : FEATURE_OPTIONS_WRITE) | FEATURE_CRSF_PARAMS | FEATURE_DFU |
-                    (noHardware ? 0 : FEATURE_HARDWARE_WRITE)
+                    FEATURE_RF_DIAG | (noHardware ? 0 : FEATURE_HARDWARE_WRITE)
     this.doc = mockDocument(this.isTx)
     // The flashed (slot) layout and the stored override, mirroring the firmware's boot rule:
     // an override replaces the layout except for the config-flash pins.
     this.slotHardware = this.isTx ? MOCK_TX_HARDWARE : MOCK_RX_HARDWARE
     this.hardwareOverride = null
+    this.rfDiag = new MockRfDiag(this.doc.settings, this.slotHardware)
     this._lostCbs = []
     this._crsfCbs = []
     // The CRSF bus as the browser sees it: the module on the cable, plus — on a TX — the
@@ -432,6 +638,8 @@ export class MockTransport {
   // What setup() does with the stored options: the regulatory domain picks the FHSS table, and on
   // a TX the options UID becomes the running UID (config.uid) — until then it reports the old one.
   _boot() {
+    this.rfDiag = new MockRfDiag(this.doc.settings, this.slotHardware)
+    delete this.hello['rf-diag']
     this.doc.settings.reg_domain_low = MOCK_DOMAINS[this.doc.options.domain] || MOCK_DOMAINS[0]
     if (this.isTx && Array.isArray(this.doc.options.uid)) {
       this.doc.config.uid = this.doc.options.uid.slice()
@@ -471,6 +679,15 @@ export class MockTransport {
   async importConfig(text) { return this.saveConfig(JSON.parse(text).config || JSON.parse(text)) }
   async previewButtonColors() {}
   async reboot() { this._simulateReboot() }
+
+  async getRfDiag() { return this.rfDiag.describe() }
+  async setRfDiag(settings) {
+    const doc = this.rfDiag.apply(settings)
+    this.hello['rf-diag'] = true
+    return doc
+  }
+  async getRfDiagSamples(from) { return this.rfDiag.samples(from) }
+  async endRfDiag() { this._simulateReboot() }
   async rebootToDfu() {}
   async reset(flags = {config: true}) {
     const fresh = mockDocument(this.isTx)

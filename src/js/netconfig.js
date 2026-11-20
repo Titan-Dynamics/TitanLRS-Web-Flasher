@@ -25,6 +25,8 @@ const PROBE_TIMEOUT_MS = 1500
 const DEFAULT_TIMEOUT_MS = 5000
 // Saving a TX models import commits ~20 KB to the config flash.
 const WRITE_TIMEOUT_MS = 15000
+// RSSI samples are polled about ten times a second; a stuck poll must not stall the stream.
+const RF_SAMPLES_TIMEOUT_MS = 2000
 // How long a /crsf long-poll may wait on the device (capped there at 2000).
 const CRSF_POLL_WAIT_MS = 1000
 // Liveness: the device counts as gone after this many consecutive failed /hello probes.
@@ -338,6 +340,31 @@ export class HttpConfigSession {
     if (flags.options) names.push('options')
     if (flags.hardware) names.push('hardware')
     await this._post(`/reset?${names.join('&')}`, '', {timeout: WRITE_TIMEOUT_MS})
+    this._notifyLost('Device rebooting')
+  }
+
+  // ---- RF diagnostics (FEATURE_RF_DIAG) ---------------------------------------
+  /** Bands, channels, power levels and the running tool (GET /rfdiag). */
+  getRfDiag() {
+    return this._json('/rfdiag')
+  }
+
+  /**
+   * Start a tool or change the running one; resolves with the new GET /rfdiag document. The
+   * first call stops the device's RF link until endRfDiag(). Armed: DeviceError ERR_BUSY.
+   */
+  setRfDiag(settings) {
+    return this._json('/rfdiag', {method: 'POST', body: JSON.stringify(settings), timeout: WRITE_TIMEOUT_MS})
+  }
+
+  /** RSSI samples from sequence number `from` on (usbcfg_api.h documents the shape). */
+  getRfDiagSamples(from) {
+    return this._json(`/rfdiag/samples?from=${from >>> 0}`, {timeout: RF_SAMPLES_TIMEOUT_MS})
+  }
+
+  /** Leave the tools: the device reboots, which brings the link back. */
+  async endRfDiag() {
+    await this._post('/rfdiag/end', '', {timeout: this.timeout})
     this._notifyLost('Device rebooting')
   }
 

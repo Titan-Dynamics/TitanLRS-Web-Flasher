@@ -26,9 +26,13 @@ export const FEATURES = {
   // HELLO feature bit5. Firmware that can store a hardware-layout override in its config flash
   // gets the Hardware tab.
   HARDWARE_WRITE: false,
+  // HELLO feature bit1. Firmware with the /rfdiag tools (STM32) gets the RF Tools tab.
+  RF_DIAG: false,
+  // HELLO `rf-diag`: the device was already running a tool when the session opened.
+  RF_DIAG_ACTIVE: false,
 }
 
-export function applyFeatures({hello, settings, optionsWritable, crsfParams, hardwareWrite}) {
+export function applyFeatures({hello, settings, optionsWritable, crsfParams, hardwareWrite, rfDiag}) {
   FEATURES.IS_TX = (hello?.['module-type'] || settings?.['module-type']) === 'TX'
   FEATURES.HAS_SUBGHZ = !!settings?.has_low_band
   FEATURES.RADIO_TYPE = hello?.['radio-type'] || settings?.['radio-type'] || ''
@@ -36,6 +40,8 @@ export function applyFeatures({hello, settings, optionsWritable, crsfParams, har
   FEATURES.OPTIONS_WRITABLE = !!optionsWritable
   FEATURES.CRSF_PARAMS = !!crsfParams
   FEATURES.HARDWARE_WRITE = !!hardwareWrite
+  FEATURES.RF_DIAG = !!rfDiag
+  FEATURES.RF_DIAG_ACTIVE = !!hello?.['rf-diag']
   return FEATURES
 }
 

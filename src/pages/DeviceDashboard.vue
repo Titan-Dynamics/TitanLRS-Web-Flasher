@@ -22,6 +22,9 @@ const activeTab = ref('info')
 const panelHost = ref(null)
 const rebooting = ref(false)
 const drawerOpen = ref(false)   // mobile: the firmware shell's slide-in sidebar
+// The device is running the RF Tools (link stopped until it reboots): the other tabs say so.
+const rfDiagActive = ref(false)
+const RF_TOOLS_TAB = 'rftools'
 
 const session = shallowRef(null)
 const dashboard = shallowRef(null)   // the lazily-imported src/dashboard/index.js module
@@ -61,7 +64,9 @@ async function adopt(s) {
   const mod = await loadDashboardModule()
   const data = await mod.initDashboard(s)
   tabs.value = mod.tabsFor(data.config || {})
-  activeTab.value = tabs.value[0]?.id || 'info'
+  rfDiagActive.value = !!data.features?.RF_DIAG_ACTIVE
+  // A reconnect (after a reboot) comes back to the tab the user was on, if the device still has it.
+  if (!tabs.value.some((t) => t.id === activeTab.value)) activeTab.value = tabs.value[0]?.id || 'info'
   phase.value = 'connected'
   await renderPanel()
 }
@@ -201,6 +206,8 @@ function resetToIdle() {
   retainedAddress.value = null
   hello.value = null
   tabs.value = []
+  activeTab.value = 'info'
+  rfDiagActive.value = false
   rebooting.value = false
   drawerOpen.value = false
   errorText.value = ''
@@ -265,6 +272,30 @@ const statusText = computed(() => {
   return 'Connection to the device lost'
 })
 
+// Sidebar sections in first-appearance order; tabs without one belong to Workspace.
+const navGroups = computed(() => {
+  const groups = []
+  for (const t of tabs.value) {
+    const title = t.section || 'Workspace'
+    let g = groups.find((x) => x.title === title)
+    if (!g) groups.push(g = {title, tabs: []})
+    g.tabs.push(t)
+  }
+  return groups
+})
+
+function onRfDiagState(e) {
+  rfDiagActive.value = !!e.detail?.active
+}
+
+async function endRfDiag() {
+  try {
+    await dashboard.value?.endRfDiagnostics()
+  } catch (err) {
+    errorText.value = (err && err.message) || String(err)
+  }
+}
+
 function selectTab(id) {
   if (activeTab.value !== id) activeTab.value = id
   drawerOpen.value = false
@@ -294,6 +325,7 @@ let unmounted = false
 
 onMounted(async () => {
   window.addEventListener('td-device-rebooting', onRebootAnnounced)
+  window.addEventListener('td-rfdiag-state', onRfDiagState)
   // ?dashboard&mock=tx|rx: straight into the demo device.
   await autoConnect()
 })
@@ -301,6 +333,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   unmounted = true
   window.removeEventListener('td-device-rebooting', onRebootAnnounced)
+  window.removeEventListener('td-rfdiag-state', onRfDiagState)
   if (session.value) session.value.disconnect().catch(() => {})
 })
 
@@ -378,12 +411,14 @@ onBeforeUnmount(() => {
       <div id="sidedrawer" :class="{active: drawerOpen}">
         <div id="sidebar">
           <nav id="sidebar-nav">
-            <div class="td-nav-section">Workspace</div>
-            <a v-for="t in tabs" :key="t.id" class="td-nav-item"
-               :class="{'is-active': activeTab === t.id}"
-               href="#" @click.prevent="selectTab(t.id)">
-              <span class="td-dash-nav-icon" v-html="navIcon(t.icon)"></span>{{ t.label }}
-            </a>
+            <template v-for="g in navGroups" :key="g.title">
+              <div class="td-nav-section">{{ g.title }}</div>
+              <a v-for="t in g.tabs" :key="t.id" class="td-nav-item"
+                 :class="{'is-active': activeTab === t.id}"
+                 href="#" @click.prevent="selectTab(t.id)">
+                <span class="td-dash-nav-icon" v-html="navIcon(t.icon)"></span>{{ t.label }}
+              </a>
+            </template>
           </nav>
         </div>
       </div>
@@ -393,6 +428,14 @@ onBeforeUnmount(() => {
         <div v-if="statusText" class="td-dash-status-bar" :title="errorText">
           <span>{{ statusText }}</span>
           <button class="td-btn td-btn-primary" :disabled="phase === 'connecting'" @click="reconnect">Reconnect</button>
+        </div>
+        <!-- RF Tools running: the link is down on every other tab too. -->
+        <div v-else-if="rfDiagActive && activeTab !== RF_TOOLS_TAB" class="td-dash-status-bar td-dash-status-warn">
+          <span>RF Tools are running, so the RF link is down.</span>
+          <span class="td-dash-status-actions">
+            <button class="td-btn td-btn-ghost" @click="selectTab(RF_TOOLS_TAB)">Open RF Tools</button>
+            <button class="td-btn" title="Reboots the device to bring the RF link back" @click="endRfDiag">Stop</button>
+          </span>
         </div>
         <!-- The demo device: say so, and the way out. -->
         <div v-else-if="demo" class="td-dash-status-bar">
@@ -500,6 +543,19 @@ onBeforeUnmount(() => {
   color: var(--td-fg-mute);
   background: var(--td-bg-1);
   border-bottom: 1px solid var(--td-line);
+}
+
+/* RF Tools running while another tab is open. */
+.td-dashboard .td-dash-status-warn {
+  color: var(--td-fg);
+  background: var(--td-warn-soft);
+  border-bottom-color: rgba(229, 165, 59, 0.45);
+}
+
+.td-dashboard .td-dash-status-actions {
+  display: inline-flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 /* Phones only (td-mobile-only): opens the slide-in sidebar. */

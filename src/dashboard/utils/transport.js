@@ -29,6 +29,10 @@ const nullTransport = {
   resetHardware: notConnected,
   sendCrsf: notConnected,
   onCrsf: () => () => {},
+  getRfDiag: notConnected,
+  setRfDiag: notConnected,
+  getRfDiagSamples: notConnected,
+  endRfDiag: notConnected,
 }
 
 let current = nullTransport
@@ -68,6 +72,11 @@ export const transport = {
   // directions: sendCrsf() is fire-and-forget and replies arrive through onCrsf().
   sendCrsf: (...a) => (current.sendCrsf ? current.sendCrsf(...a) : notConnected()),
   onCrsf: (cb) => (current.onCrsf ? current.onCrsf(cb) : () => {}),
+  // RF diagnostics (flasher-only, no on-device equivalent). Ending them reboots the device.
+  getRfDiag: (...a) => (current.getRfDiag ? current.getRfDiag(...a) : notConnected()),
+  setRfDiag: (...a) => (current.setRfDiag ? current.setRfDiag(...a) : notConnected()),
+  getRfDiagSamples: (...a) => (current.getRfDiagSamples ? current.getRfDiagSamples(...a) : notConnected()),
+  endRfDiag: () => { notifyRebooting(); return current.endRfDiag ? current.endRfDiag() : notConnected() },
 }
 
 export async function downloadExport(filename, opts = {export: true}) {
