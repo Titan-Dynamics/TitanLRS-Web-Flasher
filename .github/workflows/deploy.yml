@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get TitanLRS firmware artifacts
+      - name: Get TitanLRS backpack firmware
         run: |
           bash get_artifacts.sh
 

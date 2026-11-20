@@ -8,7 +8,8 @@
 # public/assets/firmware/<version>/FCC/, adds <version> to public/assets/firmware/index.json, and
 # writes the dev-only targets override (public/assets/targets-local/) that src/js/targets.js merges
 # in dev builds. The layouts are copied from <FW path>/src/hardware (the targets repo checkout), so
-# edits there are what gets flashed. Run ./get_artifacts.sh FIRST: it wipes public/assets/firmware.
+# edits there are what gets flashed. The flasher lists staged versions alongside the releases and
+# master build it reads from R2 (src/js/firmwareSource.js); a staged version wins over R2's.
 #
 # Extra envs (full PlatformIO names, e.g. Unified_ESP32_LR1121_TX_via_UART) are built too and staged
 # as CI stages them: every .bin of the build under FCC/<env without _via_*>/. Use this to put ESP
@@ -53,11 +54,6 @@ for defines in "${SRC}/user_defines.txt" "${SRC}/super_defines.txt"; do
   fi
 done
 
-if [ ! -f "${WF}/public/assets/firmware/index.json" ]; then
-  echo "⚠️  public/assets/firmware/index.json is missing. Run ./get_artifacts.sh first (it wipes"
-  echo "   public/assets/firmware, so run it before this script, never after)."
-fi
-
 echo "🔨 Building ${ENVS[*]} (FCC)"
 for env in "${ENVS[@]}"; do
   PLATFORMIO_BUILD_FLAGS="-DRegulatory_Domain_FCC_915" "${PIO}" run -d "${SRC}" -e "${env}_via_STLINK"
@@ -88,7 +84,7 @@ import json, os, sys
 
 index_path, local, version, hardware = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 
-# Firmware index: add the local version alongside whatever get_artifacts.sh staged.
+# Firmware index of staged local versions: add this one.
 index = {"tags": {}, "branches": {}}
 if os.path.exists(index_path):
     with open(index_path) as f:
@@ -182,5 +178,4 @@ echo ""
 echo "✅ Staged ${VERSION}:"
 echo "   firmware: public/assets/firmware/${VERSION}/FCC/{$(IFS=,; echo "${ENVS[*]}")}/firmware.bin"
 echo "   targets:  public/assets/targets-local/targets.json (+ TX/ and RX/ layouts)"
-echo "Reminder: ./get_artifacts.sh wipes public/assets/firmware - re-run this script after it."
 echo "Run: npm run dev"

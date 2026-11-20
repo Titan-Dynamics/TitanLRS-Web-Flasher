@@ -3,6 +3,7 @@ import {ref, watch, watchPostEffect} from 'vue';
 import {store} from '../js/state';
 import {compareSemanticVersions} from '../js/version';
 import {fetchTargets, repoNameFromUrl} from '../js/targets';
+import {fetchFirmwareVersions, masterTitle, MASTER_VERSION} from '../js/firmwareSource';
 
 let firmware = ref(null);
 let hardware = ref(null);
@@ -41,8 +42,13 @@ function setTargetFromParams() {
 }
 
 watchPostEffect(() => {
-  fetch(`./assets/${store.firmware}/index.json`).then(r => r.json()).then(r => {
-    firmware.value = r
+  // Releases and the master build are read from R2 at runtime (see firmwareSource.js).
+  fetchFirmwareVersions().then(result => {
+    if (result.error) {
+      fetchFailedMessage.value = result.error
+      fetchFailed.value = true
+    }
+    firmware.value = result
   })
 })
 
@@ -52,10 +58,15 @@ function updateVersions() {
     store.version = null
     versions.value = []
     const savedVersion = localStorage.getItem(`titan-last-version-${store.firmware}`)
-    Object.keys(firmware.value.tags).sort(compareSemanticVersions).reverse().forEach((key) => {
-      versions.value.push({title: key, value: firmware.value.tags[key]})
-      if (!store.version) store.version = firmware.value.tags[key]
+    firmware.value.releases.forEach((version) => {
+      versions.value.push({title: version, value: version})
+      if (!store.version) store.version = version
     })
+    // Always last, below a separator line, so a release stays the default.
+    if (firmware.value.master) {
+      versions.value.push({type: 'divider'})
+      versions.value.push({title: masterTitle(firmware.value.master), value: MASTER_VERSION})
+    }
     if (savedVersion) {
       const found = versions.value.find(v => v.value === savedVersion)
       if (found) store.version = found.value
@@ -132,7 +143,7 @@ watchPostEffect(() => {
   let keepTarget = false
   if (store.version && hardware.value) {
     setTargetFromParams()
-    const version = versions.value.find(x => x.value === store.version).title
+    const version = store.version
     for (const [vk, v] of Object.entries(hardware.value)) {
       if (vk === store.vendor || store.vendor === null) {
         for (const [rk, r] of Object.entries(v)) {
@@ -159,8 +170,7 @@ watchPostEffect(() => {
 watchPostEffect(() => {
   quickSearchItems.value = []
   if (store.version && hardware.value) {
-    const versionEntry = versions.value.find(x => x.value === store.version)
-    const version = versionEntry?.title
+    const version = store.version
     for (const [vk, v] of Object.entries(hardware.value)) {
       const vendorName = v.name || vk
       for (const [rk, r] of Object.entries(v)) {
@@ -245,7 +255,7 @@ watch(() => store.target, (v, _oldValue) => {
   </div>
 
   <VSnackbar v-model="fetchFailed" vertical color="red-darken-3" content-class="td-error-snackbar">
-    <div class="text-subtitle-1 pb-2">Targets Fetch Failed</div>
+    <div class="text-subtitle-1 pb-2">Fetch Failed</div>
     <p>{{ fetchFailedMessage }}</p>
     <template v-slot:actions>
       <VBtn variant="text" color="white" @click="fetchFailed = false">✕</VBtn>

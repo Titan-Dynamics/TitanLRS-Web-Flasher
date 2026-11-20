@@ -158,6 +158,14 @@ body {
     box-shadow: var(--td-shadow-2) !important;
 }
 
+/* Separator items in dropdowns (e.g. above "Master (<commit>)" in the version list). Vuetify's
+   default is a 1px line at 12% opacity with no spacing, invisible against a highlighted row. */
+.v-overlay__content .v-list .v-divider {
+    border-color: var(--td-line-3) !important;
+    opacity: 1 !important;
+    margin: 6px 0 !important;
+}
+
 .v-list-item {
     font-family: var(--td-font) !important;
     font-size: var(--td-fs-md) !important;

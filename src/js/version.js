@@ -1,4 +1,13 @@
+// Branch builds (e.g. "master") are named, not numbered. They are ahead of every release, so they
+// compare as newer than any version number: every target and firmware feature applies to them.
+const isBranchVersion = v => !/^\d/.test(v)
+
 export const compareSemanticVersions = (a, b) => {
+    if (isBranchVersion(a) || isBranchVersion(b)) {
+        if (isBranchVersion(a) && isBranchVersion(b)) return a.localeCompare(b)
+        return isBranchVersion(a) ? 1 : -1
+    }
+
     // Split versions and discriminators
     const [v1, d1] = a.split('-')
     const [v2, d2] = b.split('-')

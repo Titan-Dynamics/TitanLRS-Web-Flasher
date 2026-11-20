@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Get supported target version artifacts
+      - name: Get TitanLRS backpack firmware
         run: |
             bash get_artifacts.sh
       - name: Build

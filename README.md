@@ -17,22 +17,34 @@ Usage guide: https://github.com/Titan-Dynamics/TitanLRS-Web-Flasher/wiki/Using-t
 
 ## Developing and Testing Locally
 
-### 1. Download Firmware
+### 1. Download Backpack Firmware
 
-Download TitanLRS firmware from GitHub Releases:
+Main (TX/RX) firmware is not bundled with the site. The flasher reads it at runtime from the
+TitanLRS R2 bucket, so new releases and master builds appear without a redeploy:
+
+- Releases: `releases/index.json` and `releases/<version>/{FCC,LBT}/<target>/*.bin`
+- "Master (<commit>)": the latest green CI build of TitanLRS `master`, `master/latest.json` and
+  `master/<sha>/...`
+
+TitanLRS CI publishes both (`.github/scripts/r2-publish.sh` in the TitanLRS repo). See
+`src/js/firmwareSource.js`.
+
+Backpack firmware is still bundled from GitHub Releases:
 
 ```bash
 ./get_artifacts.sh
 ```
 
-To download a specific version (used for both firmware and backpack), pass it as an argument:
+To download a specific backpack version, pass it as an argument:
 
 ```bash
 ./get_artifacts.sh <version>
 ```
 
-Available firmware versions: https://github.com/Titan-Dynamics/TitanLRS/releases
 Available backpack versions: https://github.com/Titan-Dynamics/TitanLRS-Backpack/releases
+
+To flash a local TitanLRS build, stage it with `scripts/stage-local-stm32.sh` (see the script
+header). Staged versions appear alongside the R2 ones.
 
 ### 2. Install Dependencies
 
@@ -56,22 +68,17 @@ npm run build
 
 The built files will be in the `dist/` directory.
 
-## Firmware Structure
-
-The `get_artifacts.sh` script downloads firmware from TitanLRS GitHub Releases and creates the following structure:
+## Bundled Asset Structure
 
 ```
 public/assets/
-├── firmware/
+├── backpack/                # from get_artifacts.sh
 │   ├── index.json           # Version index
-│   ├── {VERSION}/           # e.g., 4.0.0-TD
-│   │   ├── FCC/            # FCC region firmware
-│   │   ├── LBT/            # LBT region firmware
-│   │   └── hardware/
-│   └── hardware/
-│       └── targets.json
-└── backpack/
-    └── index.json
+│   └── {VERSION}/
+├── firmware/                # optional: local builds from scripts/stage-local-stm32.sh
+│   ├── index.json
+│   └── {VERSION}/{FCC,LBT}/{TARGET}/firmware.bin
+└── targets-local/           # optional: dev-only targets override, same script
 ```
 
 ## Repository Information

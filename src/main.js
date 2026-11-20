@@ -8,6 +8,9 @@ import * as vertical from 'vuetify/labs/VStepperVertical'
 import './assets/td.css'
 import './main.css'
 import App from './App.vue'
+import {initAnalytics} from './js/analytics'
+
+initAnalytics()
 
 const vuetify = createVuetify({
     components: {...vertical},

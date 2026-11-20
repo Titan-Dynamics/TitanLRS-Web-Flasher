@@ -1,5 +1,6 @@
 import {store} from "./state.js";
 import {Configure} from "./configure.js";
+import {firmwareBase} from "./firmwareSource.js";
 
 const FIRMWARE_LOG_PREFIX = '[Firmware]'
 
@@ -26,7 +27,7 @@ const getSettings = async (deviceType) => {
     }
     let firmwareUrl
     if (store.firmware === 'firmware') {
-        firmwareUrl = `./assets/firmware/${store.version}/${store.options.region}/${store.target.config.firmware}/firmware.bin`
+        firmwareUrl = `${firmwareBase(store.version)}/${store.options.region}/${store.target.config.firmware}/firmware.bin`
         if (deviceType === 'RX' && !store.options.rx.rxAsTx) {
             options['rcvr-uart-baud'] = store.options.rx.uartBaud
             options['lock-on-first-connection'] = store.options.rx.lockOnFirstConnect

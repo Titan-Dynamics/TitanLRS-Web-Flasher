@@ -52,6 +52,28 @@ export default defineConfig({
             },
           },
           {
+            // Firmware files from the TitanLRS R2 bucket (src/js/firmwareSource.js). Each lives
+            // under a release version or master commit folder, so never changes: cache on first use
+            // for offline builds, as above.
+            urlPattern: /^https:\/\/pub-6e0300ebcda2424ebd2f0d524bdb7d0f\.r2\.dev\/.*\.bin$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'firmwares-r2',
+              expiration: {
+                maxEntries: 50,
+              },
+            },
+          },
+          {
+            // The R2 version lists (releases/index.json, master/latest.json) change with every
+            // publish: always ask the network, fall back to the last copy offline.
+            urlPattern: /^https:\/\/pub-6e0300ebcda2424ebd2f0d524bdb7d0f\.r2\.dev\/.*\.json$/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'firmware-index-r2',
+            },
+          },
+          {
             // Cache fonts
             urlPattern: /\/assets\/.*\.(ttf|eot|woff|woff2)/i,
             handler: 'CacheFirst',

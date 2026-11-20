@@ -2,9 +2,7 @@
 set -e
 
 # TitanLRS Configuration
-GITHUB_REPO="Titan-Dynamics/TitanLRS"
 GITHUB_BACKPACK_REPO="Titan-Dynamics/TitanLRS-Backpack"
-GITHUB_TARGETS_REPO="Titan-Dynamics/TitanLRS-Targets"
 
 github_api_get() {
   local url="$1"
@@ -120,19 +118,8 @@ write_index_json() {
 REQUESTED_VERSION="${1#v}"
 
 if [ -n "${REQUESTED_VERSION}" ]; then
-  FIRMWARE_VERSIONS="${REQUESTED_VERSION}"
   BACKPACK_VERSIONS="${REQUESTED_VERSION}"
 else
-  FIRMWARE_VERSIONS=$(fetch_all_release_versions "${GITHUB_REPO}") || {
-    echo "❌ Error: Failed to fetch firmware releases"
-    exit 1
-  }
-
-  if [ -z "${FIRMWARE_VERSIONS}" ]; then
-    echo "❌ Error: No firmware releases found"
-    exit 1
-  fi
-
   BACKPACK_VERSIONS=$(fetch_all_release_versions "${GITHUB_BACKPACK_REPO}") || {
     echo "❌ Error: Failed to fetch backpack releases"
     exit 1
@@ -144,15 +131,17 @@ else
   fi
 fi
 
+# Main (TX/RX) firmware is not bundled: the flasher reads releases and master builds from the
+# TitanLRS R2 bucket at runtime (src/js/firmwareSource.js). public/assets/firmware/ only holds
+# local builds staged by scripts/stage-local-stm32.sh, which this script leaves alone.
+
 # Directories
 ASSETS_DIR="public/assets"
-FIRMWARE_DIR="${ASSETS_DIR}/firmware"
+BACKPACK_DIR="${ASSETS_DIR}/backpack"
 
 echo "================================================"
-echo "  TitanLRS Firmware Downloader"
+echo "  TitanLRS Backpack Firmware Downloader"
 echo "================================================"
-echo "Repository: ${GITHUB_REPO}"
-echo "Firmware releases: ${GITHUB_REPO}"
 echo "Backpack releases: ${GITHUB_BACKPACK_REPO}"
 echo ""
 
@@ -160,93 +149,9 @@ echo ""
 mkdir -p "${ASSETS_DIR}"
 cd "${ASSETS_DIR}"
 
-# Remove old firmware files
-echo "🧹 Cleaning old firmware..."
-rm -rf firmware backpack
-
-# Create firmware directory structure
-mkdir -p firmware
-cd firmware
-
-echo "📥 Downloading TitanLRS firmware releases..."
-readarray -t firmware_versions <<< "${FIRMWARE_VERSIONS}"
-for version in "${firmware_versions[@]}"; do
-  if ! release_json=$(fetch_release_json "${GITHUB_REPO}" "v${version}"); then
-    echo ""
-    echo "❌ Error: Failed to fetch release metadata for firmware version ${version}"
-    echo ""
-    exit 1
-  fi
-
-  FIRMWARE_URL=$(find_release_asset_url "${release_json}" "${version}" "firmware-")
-
-  if [ -z "${FIRMWARE_URL}" ]; then
-    echo ""
-    echo "❌ Error: No firmware zip asset found for version ${version}"
-    echo ""
-    exit 1
-  fi
-
-  echo "URL: ${FIRMWARE_URL}"
-
-  curl -L -f "${FIRMWARE_URL}" -o firmware.zip || {
-    echo ""
-    echo "❌ Error: Failed to download firmware version ${version}"
-    echo ""
-    echo "Troubleshooting:"
-    echo "1. Check version exists at: https://github.com/${GITHUB_REPO}/releases"
-    echo "2. Verify version format (e.g., 'x.y.z' not 'vx.y.z')"
-    echo "3. Ensure release is published (not draft)"
-    echo ""
-    exit 1
-  }
-
-  # Extract firmware into version-specific directory
-  echo "📦 Extracting firmware ${version}..."
-  mkdir -p "${version}"
-  cd "${version}"
-  unzip -q ../firmware.zip
-
-  # Handle nested firmware directory if it exists
-  if [ -d "firmware-${version}" ]; then
-    echo "Moving firmware-${version} contents..."
-    shopt -s dotglob 2>/dev/null || true  # Enable hidden files in bash
-    mv firmware-${version}/* . 2>/dev/null || cp -r firmware-${version}/* . && rm -rf firmware-${version}
-  elif [ -d "firmware" ]; then
-    echo "Moving firmware contents..."
-    shopt -s dotglob 2>/dev/null || true
-    mv firmware/* . 2>/dev/null || cp -r firmware/* . && rm -rf firmware
-  fi
-
-  cd ..
-  rm firmware.zip
-done
-
-# Download hardware definitions from master branch
-echo "📥 Downloading hardware definitions..."
-mkdir -p hardware
-cd hardware
-HARDWARE_URL="https://raw.githubusercontent.com/${GITHUB_TARGETS_REPO}/master/targets.json"
-curl -L -f "${HARDWARE_URL}" -o targets.json || {
-  echo "⚠️  Warning: Could not download targets.json from master branch"
-  echo "Using targets.json from firmware archive if available..."
-  first_version="${firmware_versions[0]}"
-  if [ -f "../${first_version}/hardware/targets.json" ]; then
-    cp "../${first_version}/hardware/targets.json" .
-    echo "✓ Using targets.json from firmware ${first_version}"
-  else
-    echo "❌ Error: No targets.json found"
-    exit 1
-  fi
-}
-
-cd ..
-
-# Create index.json for the web flasher to discover versions
-echo "📝 Creating index.json..."
-write_index_json index.json "${firmware_versions[@]}"
-
-cd ..
+# Remove old backpack files
+echo "🧹 Cleaning old backpack firmware..."
+rm -rf backpack
 
 # Download TitanLRS Backpack firmware
 echo ""
@@ -310,20 +215,8 @@ write_index_json index.json "${backpack_versions[@]}"
 cd ..
 
 echo ""
-echo "✅ Firmware downloads completed successfully!"
-echo "📂 Location: ${FIRMWARE_DIR}/"
-echo ""
-
-# Show directory structure
-echo "Directory structure:"
-if [ -n "${firmware_versions[0]}" ] && [ -d "${FIRMWARE_DIR}/${firmware_versions[0]}" ]; then
-  echo "firmware/"
-  echo "├── ${firmware_versions[0]}/"
-  ls "${FIRMWARE_DIR}/${firmware_versions[0]}" | head -10 | sed 's/^/│   ├── /'
-  echo "├── hardware/"
-  echo "│   └── targets.json"
-fi
-
+echo "✅ Backpack firmware downloads completed successfully!"
+echo "📂 Location: ${BACKPACK_DIR}/"
 echo ""
 echo "================================================"
 echo "Ready for development!"
