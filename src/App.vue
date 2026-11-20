@@ -13,7 +13,6 @@ import BackpackOptions from "./pages/BackpackOptions.vue";
 
 import Download from "./pages/Download.vue";
 import SerialFlash from "./pages/SerialFlash.vue";
-import STLinkFlash from "./pages/STLinkFlash.vue";
 import DFUFlash from "./pages/DFUFlash.vue";
 
 // Lazy so the flashing path never downloads the dashboard or its ported Lit panels.
@@ -116,7 +115,6 @@ if (DEVICE_CONFIG_ENABLED && urlParams.has('dashboard')) store.view = 'dashboard
                   <template v-slot:item.3>
                     <Download v-if="store.options.flashMethod==='download'"/>
                     <Download v-else-if="store.options.flashMethod==='wifi'"/>
-                    <STLinkFlash v-else-if="store.options.flashMethod==='stlink'"/>
                     <DFUFlash v-else-if="store.options.flashMethod==='dfu'"/>
                     <SerialFlash v-else/>
                   </template>

@@ -5,6 +5,7 @@ import FileSaver from "file-saver";
 import pako from 'pako';
 import {store} from "../js/state.js";
 import {generateFirmware} from "../js/firmware.js";
+import {trackDownloaded, trackFlashFailed} from "../js/analytics.js";
 
 const DOWNLOAD_LOG_PREFIX = '[Download]'
 
@@ -18,7 +19,10 @@ const files = {
   firmwareFiles: [],
   config: null,
   firmwareUrl: '',
-  options: {}
+  options: {},
+  deviceType: null,
+  radioType: undefined,
+  txType: undefined
 }
 
 async function buildFirmware() {
@@ -29,12 +33,15 @@ async function buildFirmware() {
       version: store.version
     })
     try {
-      const [binary, {config, firmwareUrl, options}] = await generateFirmware()
+      const [binary, {config, firmwareUrl, options, deviceType, radioType, txType}] = await generateFirmware()
 
       files.firmwareFiles = binary
       files.firmwareUrl = firmwareUrl
       files.config = config
       files.options = options
+      files.deviceType = deviceType
+      files.radioType = radioType
+      files.txType = txType
 
       if (store.target.config.upload_methods.includes('zip') ||
           (store.targetType === 'vrx' && (store.vendor === 'hdzero-goggle' || store.vendor === 'hdzero-boxpro'))) { // or HDZero Goggles
@@ -47,6 +54,7 @@ async function buildFirmware() {
       })
     } catch (error) {
       console.error(`${DOWNLOAD_LOG_PREFIX} buildFirmware:failed`, error)
+      trackFlashFailed(files, 'fetch', error)
       fetchFailedMessage.value = `Failed to fetch firmware files: ${error?.message ?? error}`
       fetchFailed.value = true
     }
@@ -64,6 +72,7 @@ async function downloadFirmware() {
     const data = new Blob([bin], {type: 'application/octet-stream'})
     FileSaver.saveAs(data, 'firmware.bin.gz')
     console.info(`${DOWNLOAD_LOG_PREFIX} download:complete`, {output: 'firmware.bin.gz'})
+    trackDownloaded(files, {output: 'firmware.bin.gz'})
   } else if (zipped.value) {
     // create zip file
     const zipper = new zip.ZipWriter(new zip.BlobWriter("application/zip"), {bufferedWrite: true})
@@ -73,11 +82,13 @@ async function downloadFirmware() {
     await zipper.add('firmware.bin', new Blob([files.firmwareFiles[3].data.buffer], {type: 'application/octet-stream'}).stream())
     FileSaver.saveAs(await zipper.close(), 'firmware.zip')
     console.info(`${DOWNLOAD_LOG_PREFIX} download:complete`, {output: 'firmware.zip'})
+    trackDownloaded(files, {output: 'firmware.zip'})
   } else {
     const bin = files.firmwareFiles[files.firmwareFiles.length - 1].data.buffer
     const data = new Blob([bin], {type: 'application/octet-stream'})
     FileSaver.saveAs(data, 'firmware.bin')
     console.info(`${DOWNLOAD_LOG_PREFIX} download:complete`, {output: 'firmware.bin'})
+    trackDownloaded(files, {output: 'firmware.bin'})
   }
 }
 </script>

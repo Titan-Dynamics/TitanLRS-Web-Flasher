@@ -132,8 +132,7 @@ else
 fi
 
 # Main (TX/RX) firmware is not bundled: the flasher reads releases and master builds from the
-# TitanLRS R2 bucket at runtime (src/js/firmwareSource.js). public/assets/firmware/ only holds
-# local builds staged by scripts/stage-local-stm32.sh, which this script leaves alone.
+# TitanLRS R2 bucket at runtime (src/js/firmwareSource.js).
 
 # Directories
 ASSETS_DIR="public/assets"

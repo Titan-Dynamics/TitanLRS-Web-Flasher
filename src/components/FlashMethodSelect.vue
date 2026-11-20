@@ -11,7 +11,6 @@ const flashMethods = [
   {value: 'betaflight', title: 'Betaflight Passthrough'},
   {value: 'etx',     title: 'EdgeTX Passthrough'},
   {value: 'passthru', title: 'Passthrough'},
-  {value: 'stlink',  title: 'STLink'},
   {value: 'dfu',     title: 'USB DFU'},
 ]
 

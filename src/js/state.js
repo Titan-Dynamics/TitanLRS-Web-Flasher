@@ -75,7 +75,7 @@ export function resetState() {
     }
 }
 
-/** The selected target is an STM32 board (no WiFi, flashed over USB DFU / STLink). */
+/** The selected target is an STM32 board (no WiFi, flashed over USB DFU). */
 export function isStm32() {
     return store.target?.config?.platform === 'stm32'
 }

@@ -43,9 +43,6 @@ To download a specific backpack version, pass it as an argument:
 
 Available backpack versions: https://github.com/Titan-Dynamics/TitanLRS-Backpack/releases
 
-To flash a local TitanLRS build, stage it with `scripts/stage-local-stm32.sh` (see the script
-header). Staged versions appear alongside the R2 ones.
-
 ### 2. Install Dependencies
 
 ```bash
@@ -72,13 +69,9 @@ The built files will be in the `dist/` directory.
 
 ```
 public/assets/
-├── backpack/                # from get_artifacts.sh
-│   ├── index.json           # Version index
-│   └── {VERSION}/
-├── firmware/                # optional: local builds from scripts/stage-local-stm32.sh
-│   ├── index.json
-│   └── {VERSION}/{FCC,LBT}/{TARGET}/firmware.bin
-└── targets-local/           # optional: dev-only targets override, same script
+└── backpack/                # from get_artifacts.sh
+    ├── index.json           # Version index
+    └── {VERSION}/
 ```
 
 ## Repository Information

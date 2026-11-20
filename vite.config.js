@@ -42,7 +42,7 @@ export default defineConfig({
           {
             // Cache firmware files for a device once they are requested the first time
             // This allows building again when being offline
-            urlPattern: /\/assets\/(firmware|backpack)\/.*/i,
+            urlPattern: /\/assets\/backpack\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'firmwares',
@@ -91,8 +91,8 @@ export default defineConfig({
         'favicon.webp',
         'apple-touch-icon.png',
         'mask-icon.svg',
-        'assets/{firmware,backpack}/index.json',
-        'assets/{firmware,backpack}/**/targets.json',
+        'assets/backpack/index.json',
+        'assets/backpack/**/targets.json',
       ],
       manifest: {
         name: 'TitanLRS Web Flasher',

@@ -5,6 +5,7 @@ import {generateFirmware} from "../js/firmware.js";
 import {XmodemFlasher} from "../js/xmodem.js";
 import {ESPFlasher} from "../js/espflasher.js";
 import {MismatchError, WrongMCU} from "../js/error.js";
+import {trackFlashed, trackFlashFailed} from "../js/analytics.js";
 
 const SERIAL_FLASH_LOG_PREFIX = '[SerialFlash]'
 
@@ -55,6 +56,7 @@ async function buildFirmware() {
     return true
   } catch (error) {
     console.error(`${SERIAL_FLASH_LOG_PREFIX} buildFirmware:failed`, error)
+    trackFlashFailed(files, 'fetch', error)
     fetchFailedMessage.value = `Failed to fetch firmware files: ${error?.message ?? error}`
     fetchFailed.value = true
     return false
@@ -159,12 +161,15 @@ async function connect() {
         failed.value = true
         enableFlash.value = true
         console.warn(`${SERIAL_FLASH_LOG_PREFIX} connect:mismatch`, {error: e?.message})
+        trackFlashFailed(files, 'connect', e)
       } else if (e instanceof WrongMCU) {
         term.writeln(e.message)
         failed.value = true
         console.warn(`${SERIAL_FLASH_LOG_PREFIX} connect:wrong-mcu`, {error: e?.message})
+        trackFlashFailed(files, 'connect', e)
       } else {
         console.error(`${SERIAL_FLASH_LOG_PREFIX} connect:failed`, e)
+        trackFlashFailed(files, 'connect', e)
         term.writeln('Failed to connect to device, restart device and try again')
         failed.value = true
       }
@@ -191,6 +196,7 @@ async function flash() {
   failed.value = false
   step.value++
   let lastProgressBucket = -1
+  const startedAt = performance.now()
   try {
     progressText.value = ''
     await flasher.flash(files.firmwareFiles, fullErase.value, (fileIndex, written, total) => {
@@ -212,8 +218,10 @@ async function flash() {
     flashComplete.value = true
     step.value++
     console.info(`${SERIAL_FLASH_LOG_PREFIX} flash:complete`)
+    trackFlashed(files, {full_erase: fullErase.value, duration_s: Math.round((performance.now() - startedAt) / 1000)})
   } catch (e) {
     console.error(`${SERIAL_FLASH_LOG_PREFIX} flash:failed`, e)
+    trackFlashFailed(files, 'flash', e, {full_erase: fullErase.value})
     failed.value = true
   }
 }
