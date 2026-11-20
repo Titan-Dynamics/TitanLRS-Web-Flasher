@@ -85,9 +85,9 @@ let flashing = false
 // What the board was running before this flash, from its /hello (null when it was put into DFU by
 // hand, e.g. BOOT0): the upgrade path, for analytics.
 let previousFirmware = null
-// The bootloader's USB serial number, built from the STM32's factory unique ID: tells individual
-// units apart in analytics.
-let deviceSerial = null
+// The STM32's 96-bit factory unique ID, read from the bootloader: tells individual units apart in
+// analytics.
+let deviceId = null
 
 let progress = ref(0)
 let progressText = ref('')
@@ -134,7 +134,7 @@ async function closeDevice() {
   }
   dfuDevice = null
   previousFirmware = null
-  deviceSerial = null
+  deviceId = null
   enableFlash.value = false
   flashComplete.value = false
   failed.value = false
@@ -148,15 +148,15 @@ async function closeDevice() {
 /** A DFU device is in hand: read its flash layout and enable flashing. */
 async function useDfuDevice(device) {
   dfuDevice = device
-  deviceSerial = device.serialNumber || null
   needAuthorise.value = false
   navigator.usb.addEventListener('disconnect', onUsbDisconnect)
   writeln(`DFU device found: ${device.productName || 'STM32 BOOTLOADER'}`)
   try {
-    const {size, sectors} = await DfuFlasher.probe(device)
+    const {size, sectors, uniqueId} = await DfuFlasher.probe(device)
+    deviceId = uniqueId
     writeln(`Flash: ${Math.round(size / 1024)} KB, ${sectors} sectors`)
     enableFlash.value = true
-    console.info(`${DFU_FLASH_LOG_PREFIX} connect:ready`, {size, sectors})
+    console.info(`${DFU_FLASH_LOG_PREFIX} connect:ready`, {size, sectors, uniqueId})
   } catch (e) {
     console.error(`${DFU_FLASH_LOG_PREFIX} connect:probe-failed`, e)
     writeln(e.message)
@@ -290,7 +290,7 @@ async function flash() {
   let lastProgressBucket = -1
   flashing = true
   const startedAt = performance.now()
-  const extra = () => ({full_erase: fullErase.value, device_id: deviceSerial, ...(previousFirmware ?? {})})
+  const extra = () => ({full_erase: fullErase.value, device_id: deviceId, ...(previousFirmware ?? {})})
   try {
     progressText.value = 'erase'
     progress.value = 0

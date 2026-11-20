@@ -8,6 +8,21 @@ const POSTHOG_HOST = 'https://us.i.posthog.com'
 
 const TITAN_VENDOR = 'titan_dynamics'
 
+/**
+ * The radio chip a target uses, e.g. 'LR2021'. Not generateFirmware()'s radioType, which is the
+ * firmware's options family and calls every dual-band target 'lr1121'. The firmware target name
+ * says it when the board family has more than one chip (Unified_STM32H743_LR2021_RX); otherwise the
+ * band decides it (Unified_ESP32_2400_TX is SX1280).
+ */
+function radioChip(firmware, radio) {
+    const named = /LR2021|LR1121|SX128\d|SX127\d|LLCC68/i.exec(firmware ?? '')
+    if (named) return named[0].toUpperCase()
+    if (radio?.endsWith('_2400')) return 'SX1280'
+    if (radio?.endsWith('_900')) return 'SX127X'
+    if (radio?.endsWith('_dual')) return 'LR1121'
+    return null
+}
+
 // Resolves with the started PostHog instance, or null if it failed to load.
 let posthogReady = null
 
@@ -58,13 +73,11 @@ function flashProperties(files) {
         platform: config.platform,
         firmware_target: config.firmware,
         flash_method: store.options.flashMethod,
-        // Arrived with ?target=... (a link from a vendor or docs page), not picked from the lists.
-        deep_link: new URLSearchParams(window.location.search).has('target'),
     }
     if (store.firmware === 'firmware') {
         Object.assign(props, {
             radio: target.radio,       // e.g. 'tx_2400', 'rx_dual'
-            radio_chip: files.radioType,
+            radio_chip: radioChip(config.firmware, target.radio),
             rx_as_tx: files.txType ?? null,
             region: store.options.region,
             domain: store.radio?.endsWith('_900') || store.radio?.endsWith('_dual') ? store.options.domain : null,

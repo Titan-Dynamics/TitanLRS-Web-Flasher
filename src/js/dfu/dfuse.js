@@ -36,6 +36,20 @@ const USB_DT_DFU_FUNCTIONAL = 0x21
 const LANGID_EN_US = 0x0409
 
 const DEFAULT_TRANSFER_SIZE = 2048
+
+const UID_LENGTH = 12
+
+/**
+ * Where the ROM bootloader lets us read the 96-bit factory unique ID, by chip family, told apart by
+ * the first flash sector (128 KB on the H7, 16 KB on the F4).
+ *  - STM32H7: the ROM reads the UID address (0x1FF1E800) directly.
+ *  - STM32F4: the ROM refuses the UID address (0x1FFF7A10), but reads the OTP area (0x1FFF7800,
+ *    528 bytes) and carries on past its end into the UID that follows it.
+ */
+const UID_READS = [
+  {family: 'STM32H7', firstSector: 128 * 1024, address: 0x1FF1E800, offset: 0},
+  {family: 'STM32F4', firstSector: 16 * 1024, address: 0x1FFF7800, offset: 0x210},
+]
 const CLAIM_RETRIES = 6
 const CLAIM_RETRY_MS = 1000
 
@@ -260,6 +274,24 @@ export class DfuSeDevice {
 
   setAddress(address) {
     return this._special([DFUSE_SET_ADDRESS, ...le32(address)])
+  }
+
+  /**
+   * The chip's 96-bit factory unique ID as 24 hex digits (bytes in memory order), or null for a
+   * chip family we don't know how to read it on. Needs readFlashLayout() first. Leaves the device
+   * idle; throws if the ROM refuses the read.
+   */
+  async readUniqueId() {
+    const where = UID_READS.find((r) => r.firstSector === this.layout?.sectors[0]?.size)
+    if (!where) return null
+    await this.ensureIdle()
+    await this.setAddress(where.address)
+    await this.ensureIdle()
+    const data = await this.upload(2, where.offset + UID_LENGTH)
+    await this.ensureIdle()
+    if (data.length < where.offset + UID_LENGTH) throw new Error('Short read of the unique ID')
+    return Array.from(data.subarray(where.offset, where.offset + UID_LENGTH),
+      (b) => b.toString(16).padStart(2, '0')).join('')
   }
 
   eraseSector(address) {

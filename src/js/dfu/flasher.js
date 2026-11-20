@@ -40,14 +40,23 @@ async function openOrExplain(dfu) {
 }
 
 export class DfuFlasher {
-  /** Open the bootloader, read its flash layout, and close it again. Throws one readable Error. */
+  /**
+   * Open the bootloader, read its flash layout and the chip's unique ID (null if unreadable; never
+   * fatal), and close it again. Throws one readable Error.
+   */
   static async probe(device) {
     const dfu = new DfuSeDevice(device)
     try {
       await openOrExplain(dfu)
       const layout = await dfu.readFlashLayout()
       const size = layout.sectors.reduce((n, s) => n + s.size, 0)
-      return {layout, size, sectors: layout.sectors.length}
+      let uniqueId = null
+      try {
+        uniqueId = await dfu.readUniqueId()
+      } catch (err) {
+        console.info('[DFU] unique ID not readable', {err})
+      }
+      return {layout, size, sectors: layout.sectors.length, uniqueId}
     } catch (err) {
       console.info('[DFU] probe failed', {err})
       throw new Error(describeDfuError(err))
